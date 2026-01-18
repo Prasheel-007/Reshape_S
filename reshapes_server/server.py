@@ -1,111 +1,165 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import random
+import math
 
 app = Flask(__name__)
-CORS(app)  # Allows Flutter to talk to Python
+CORS(app)  # Allow the Flutter app to talk to this server
 
 # --- CONFIGURATION ---
-GRID_SIZE = 15
-# Tile IDs: 
-# 0=Grass, 1=Road(V), 2=House, 3=Factory, 4=Park, 5=Road(H), 6=Junction
+GRID_SIZE = 20  # Bigger map for better simulation
 
-# --- LOGIC: SMART CITY GENERATOR ---
-@app.route('/api/generate_random', methods=['GET'])
-def generate_random_world():
+# TILE CODES
+GRASS = 0
+ROAD_V = 1   # Vertical
+HOUSE = 2
+FACTORY = 3
+PARK = 4
+ROAD_H = 5   # Horizontal
+ROAD_X = 6   # Junction
+
+# --- ALGORITHMS ---
+
+def generate_smart_road_network():
     """
-    Generates a STRUCTURED city.
-    1. Fills map with Grass.
-    2. Draws a Road Network with Vertical(1), Horizontal(5), and Junction(6).
-    3. Places Buildings only near roads.
+    Uses a 'Random Walk' algorithm to create a connected city layout.
+    Then applies a 'Tile Logic' pass to fix road directions (Horizontal vs Vertical).
     """
-    # 1. Start with blank Grass canvas
-    grid = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+    # 1. Start with empty grass grid
+    grid = [[GRASS for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
     
-    # 2. Draw Roads (The Skeleton)
-    mid = GRID_SIZE // 2
-    for i in range(GRID_SIZE):
-        grid[mid][i] = 5  # ID 5: Horizontal Road
-        grid[i][mid] = 1  # ID 1: Vertical Road
+    # 2. Procedural Road Generation (Random Walk)
+    x, y = GRID_SIZE // 2, GRID_SIZE // 2
+    steps = 100  # Length of the road network
     
-    # FIX: Place the Intersection at the center
-    grid[mid][mid] = 6    # ID 6: The Junction
+    for _ in range(steps):
+        grid[x][y] = ROAD_V # Temporarily mark as Vertical Road
         
-    # 3. Place Buildings (The Flesh)
-    for x in range(GRID_SIZE):
-        for y in range(GRID_SIZE):
-            # Skip if this tile is already a road
-            if grid[x][y] in [1, 5, 6]:
-                continue
+        # Move random direction
+        direction = random.choice(['UP', 'DOWN', 'LEFT', 'RIGHT'])
+        if direction == 'UP' and x > 1: x -= 1
+        elif direction == 'DOWN' and x < GRID_SIZE - 2: x += 1
+        elif direction == 'LEFT' and y > 1: y -= 1
+        elif direction == 'RIGHT' and y < GRID_SIZE - 2: y += 1
+
+    # 3. Place Buildings (Constraint: Must be near roads)
+    for r in range(GRID_SIZE):
+        for c in range(GRID_SIZE):
+            if grid[r][c] == GRASS:
+                # Check neighbors for a road
+                has_road_neighbor = False
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
+                        if grid[nr][nc] in [ROAD_V, ROAD_H, ROAD_X]:
+                            has_road_neighbor = True
                 
-            # Check neighbors
-            is_near_road = False
-            neighbors = []
-            if x > 0: neighbors.append(grid[x-1][y])
-            if x < GRID_SIZE-1: neighbors.append(grid[x+1][y])
-            if y > 0: neighbors.append(grid[x][y-1])
-            if y < GRID_SIZE-1: neighbors.append(grid[x][y+1])
-            
-            for n in neighbors:
-                if n in [1, 5, 6]: # If near ANY road piece
-                    is_near_road = True
-                    break
-            
-            # DECISION: Only build if near a road
-            if is_near_road:
-                roll = random.randint(1, 100)
-                if roll < 50:    # 50% chance of House
-                    grid[x][y] = 2 
-                elif roll < 65:  # 15% chance of Factory
-                    grid[x][y] = 3
-                elif roll < 80:  # 15% chance of Park
-                    grid[x][y] = 4
-                # Remaining 20% stays Grass
+                # Probability to spawn buildings if near road
+                if has_road_neighbor:
+                    roll = random.random()
+                    if roll < 0.15: grid[r][c] = HOUSE
+                    elif roll < 0.20: grid[r][c] = FACTORY
+                    elif roll < 0.25: grid[r][c] = PARK
 
-    print("✅ Smart City Generated with Junctions")
-    return jsonify({
-        "status": "success",
-        "grid": grid,
-        "message": "Structured City Generated"
-    })
+    # 4. Auto-Tiling Pass (Fix Road Directions)
+    # This logic changes a generic "1" road into Horizontal (5) or Junction (6)
+    # based on what is around it.
+    for r in range(GRID_SIZE):
+        for c in range(GRID_SIZE):
+            if grid[r][c] == ROAD_V: # Check if it's a road
+                
+                # Check neighbors (Up, Down, Left, Right)
+                u = r > 0 and grid[r-1][c] in [ROAD_V, 5, 6]
+                d = r < GRID_SIZE-1 and grid[r+1][c] in [ROAD_V, 5, 6]
+                l = c > 0 and grid[r][c-1] in [ROAD_V, 5, 6]
+                ri = c < GRID_SIZE-1 and grid[r][c+1] in [ROAD_V, 5, 6]
+                
+                neighbor_count = sum([u, d, l, ri])
 
-# --- LOGIC: SCORING ENGINE ---
-@app.route('/api/calculate_score', methods=['POST'])
-def calculate_score():
-    data = request.json
-    grid = data.get('grid', [])
-    
+                if neighbor_count >= 3:
+                    grid[r][c] = ROAD_X  # Junction
+                elif (l or ri) and not (u or d):
+                    grid[r][c] = ROAD_H  # Horizontal
+                else:
+                    grid[r][c] = ROAD_V  # Keep Vertical
+
+    return grid
+
+def calculate_metrics(grid):
+    """
+    The Heuristic Scoring Engine.
+    Calculates Score (0-100), Pollution, and Budget.
+    """
     pollution = 0
-    happiness = 50
-    budget = 100000
+    sustainability = 50 # Start at neutral
+    budget_used = 0
     
-    for row in grid:
-        for tile_id in row:
-            if tile_id == 2: # House
-                pollution += 1
-                happiness += 2
-                budget += 500 
-            elif tile_id == 3: # Factory
-                pollution += 15
-                happiness -= 10
-                budget += 2000 
-            elif tile_id == 4: # Park
-                pollution -= 5
-                happiness += 10
-                budget -= 200 
+    factories = []
+    houses = []
+    parks = []
+    
+    # 1. Scan Grid
+    for r in range(len(grid)):
+        for c in range(len(grid[r])):
+            tile = grid[r][c]
+            if tile == HOUSE: houses.append((r, c))
+            elif tile == FACTORY: factories.append((r, c))
+            elif tile == PARK: parks.append((r, c))
+            
+            # Budget Calculation
+            if tile == ROAD_V or tile == ROAD_H: budget_used += 10
+            elif tile == HOUSE: budget_used += 50
+            elif tile == FACTORY: budget_used += 200
+            elif tile == PARK: budget_used += 100
 
-    score = 100 - pollution + (happiness * 0.5)
-    final_score = max(0, min(100, int(score)))
-
-    return jsonify({
+    # 2. Heuristic Rules
+    
+    # Rule A: Pollution (Factories close to houses is BAD)
+    for f in factories:
+        pollution += 100 # Base pollution per factory
+        for h in houses:
+            # Manhattan Distance
+            dist = abs(f[0] - h[0]) + abs(f[1] - h[1])
+            if dist < 5:
+                sustainability -= 5 # Heavy penalty for proximity
+    
+    # Rule B: Green Energy (Parks increase sustainability)
+    sustainability += len(parks) * 5
+    
+    # Rule C: Housing Demand (Need enough houses)
+    if len(houses) < 5: sustainability -= 10
+    
+    # Clamp Score
+    final_score = max(0, min(100, int(sustainability)))
+    
+    return {
         "score": final_score,
         "metrics": {
             "pollution": pollution,
-            "happiness": happiness,
-            "budget": budget
+            "budget": budget_used,
+            "population": len(houses) * 4
         }
-    })
+    }
 
+# --- API ENDPOINTS ---
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Reshape_S AI Brain is Running!"
+
+@app.route('/api/generate_random', methods=['GET'])
+def get_random_world():
+    grid = generate_smart_road_network()
+    return jsonify({"grid": grid})
+
+@app.route('/api/calculate_score', methods=['POST'])
+def get_score():
+    data = request.get_json()
+    grid = data.get('grid', [])
+    metrics = calculate_metrics(grid)
+    return jsonify(metrics)
+
+# --- VERCEL GUARD (CRITICAL) ---
+# This ensures Vercel handles the start process, not this script.
 if __name__ == '__main__':
-    print("🚀 Reshape_S Brain is Active on Port 5000...")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)
