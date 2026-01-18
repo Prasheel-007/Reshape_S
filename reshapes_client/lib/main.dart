@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
+import 'package:flutter/foundation.dart'; // REQUIRED: For the Debug/Release switch
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -136,7 +137,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ],
               ),
               child: Image.asset(
-                'assets/images/Reshape_S.png', // Uses your new Logo
+                'assets/images/Reshape_S.png', // Uses your Hexagon Logo
                 width: 140,
                 height: 140,
               ),
@@ -235,7 +236,7 @@ class HomeScreen extends StatelessWidget {
                 _showThemePicker(context);
               }),
 
-              // RESTORED: THE SYSTEM ARCHITECTURE BUTTON
+              // SYSTEM INFO BUTTON
               _buildMenuButton(context, "SYSTEM ARCHITECTURE", Icons.memory, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const SystemInfoScreen()));
               }),
@@ -303,7 +304,7 @@ class HomeScreen extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: SizedBox(
-        width: 280, // Made wider to fit long text
+        width: 280,
         height: 55,
         child: ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
@@ -368,7 +369,7 @@ class SystemInfoScreen extends StatelessWidget {
           _buildInfoCard(
             theme,
             "Procedural Generation (PCG)",
-            "The city layout is not random. It uses a 'Constrained Random Walk' algorithm to generate organic road networks while enforcing connectivity rules (e.g., houses must face roads).",
+            "The city layout uses a 'Cellular Zoning' algorithm. It divides the world into arterial blocks and assigns density zones (Industrial vs. Residential) based on Manhattan Distance from the city center.",
             Icons.grid_4x4,
           ),
           const SizedBox(height: 10),
@@ -480,10 +481,20 @@ class _SimulationScreenState extends State<SimulationScreen> {
     _fetchRandomWorld();
   }
 
+  // --- API CALL 1: GENERATE WORLD ---
   Future<void> _fetchRandomWorld() async {
     setState(() => isLoading = true);
     try {
-      String url = 'http://127.0.0.1:5000/api/generate_random';
+
+      const String productionUrl = 'https://reshape-s.vercel.app';
+      const String localUrl = 'http://127.0.0.1:5000';
+
+      // AUTO-SWITCH: Debug = Localhost, Release = Vercel
+      final String baseUrl = kDebugMode ? localUrl : productionUrl;
+
+      String url = '$baseUrl/api/generate_random';
+      print("Connecting to: $baseUrl"); // Debug helper
+
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -493,13 +504,24 @@ class _SimulationScreenState extends State<SimulationScreen> {
         });
         _updateScore();
       }
-    } catch (e) { print("Error: $e"); }
+    } catch (e) {
+      print("Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Connection Failed. Is the Server Running?"))
+      );
+    }
     setState(() => isLoading = false);
   }
 
+  // --- API CALL 2: UPDATE SCORE ---
   Future<void> _updateScore() async {
     try {
-      String url = 'http://127.0.0.1:5000/api/calculate_score';
+      const String productionUrl = 'https://reshape-s.vercel.app';
+      const String localUrl = 'http://127.0.0.1:5000';
+      final String baseUrl = kDebugMode ? localUrl : productionUrl;
+
+      String url = '$baseUrl/api/calculate_score';
+
       final response = await http.post(
         Uri.parse(url),
         headers: {"Content-Type": "application/json"},
@@ -518,6 +540,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
 
   void _cycleTile(int x, int y) {
     int current = grid[x][y];
+    // Don't modify roads (1, 5, 6)
     if (current == 1 || current == 5 || current == 6) return;
 
     setState(() {

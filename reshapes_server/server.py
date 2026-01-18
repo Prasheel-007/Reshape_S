@@ -1,13 +1,12 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import random
-import math
 
 app = Flask(__name__)
-CORS(app)  # Allow the Flutter app to talk to this server
+CORS(app)
 
 # --- CONFIGURATION ---
-GRID_SIZE = 20  # Bigger map for better simulation
+GRID_SIZE = 20  
 
 # TILE CODES
 GRASS = 0
@@ -20,78 +19,75 @@ ROAD_X = 6   # Junction
 
 # --- ALGORITHMS ---
 
-def generate_smart_road_network():
+def generate_real_world_city():
     """
-    Uses a 'Random Walk' algorithm to create a connected city layout.
-    Then applies a 'Tile Logic' pass to fix road directions (Horizontal vs Vertical).
+    Generates a 'Zoned City' Layout (SimCity Style).
+    1. Creates a grid of Arterial Roads (City Blocks).
+    2. Assigns a 'Zone Type' to each block (Residential, Industrial, Nature).
+    3. Fills the blocks based on their zone density.
     """
-    # 1. Start with empty grass grid
+    # 1. Start with Grass
     grid = [[GRASS for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
     
-    # 2. Procedural Road Generation (Random Walk)
-    x, y = GRID_SIZE // 2, GRID_SIZE // 2
-    steps = 100  # Length of the road network
+    # 2. CREATE ROAD NETWORK (The Grid)
+    # We place roads at regular intervals to create 'City Blocks'
+    block_size = random.randint(4, 6) # Blocks are 4-6 tiles wide
     
-    for _ in range(steps):
-        grid[x][y] = ROAD_V # Temporarily mark as Vertical Road
-        
-        # Move random direction
-        direction = random.choice(['UP', 'DOWN', 'LEFT', 'RIGHT'])
-        if direction == 'UP' and x > 1: x -= 1
-        elif direction == 'DOWN' and x < GRID_SIZE - 2: x += 1
-        elif direction == 'LEFT' and y > 1: y -= 1
-        elif direction == 'RIGHT' and y < GRID_SIZE - 2: y += 1
+    # Vertical Roads
+    for c in range(2, GRID_SIZE, block_size):
+        for r in range(GRID_SIZE):
+            grid[r][c] = ROAD_V
 
-    # 3. Place Buildings (Constraint: Must be near roads)
+    # Horizontal Roads
+    for r in range(2, GRID_SIZE, block_size):
+        for c in range(GRID_SIZE):
+            if grid[r][c] == ROAD_V:
+                grid[r][c] = ROAD_X # Create Intersection
+            else:
+                grid[r][c] = ROAD_H
+
+    # 3. POPULATE ZONES (The Buildings)
+    # We iterate through the empty spaces (blocks) and decide what they are.
+    
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
-            if grid[r][c] == GRASS:
-                # Check neighbors for a road
-                has_road_neighbor = False
-                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    nr, nc = r + dr, c + dc
-                    if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
-                        if grid[nr][nc] in [ROAD_V, ROAD_H, ROAD_X]:
-                            has_road_neighbor = True
-                
-                # Probability to spawn buildings if near road
-                if has_road_neighbor:
-                    roll = random.random()
-                    if roll < 0.15: grid[r][c] = HOUSE
-                    elif roll < 0.20: grid[r][c] = FACTORY
-                    elif roll < 0.25: grid[r][c] = PARK
+            # Skip if it's a road
+            if grid[r][c] != GRASS:
+                continue
+            
+            # Determine Zone based on location
+            # Center of map = Industrial/Dense
+            # Edges of map = Residential/Parks
+            
+            dist_to_center = abs(r - GRID_SIZE//2) + abs(c - GRID_SIZE//2)
+            
+            # Roll for type
+            roll = random.random()
+            
+            if dist_to_center < 8: 
+                # Inner City (Factories & Dense Housing)
+                if roll < 0.3: grid[r][c] = FACTORY
+                elif roll < 0.8: grid[r][c] = HOUSE
+                else: grid[r][c] = GRASS # Alleyways
+            else:
+                # Suburbs (Parks & Housing)
+                if roll < 0.1: grid[r][c] = FACTORY # Rare factory
+                elif roll < 0.5: grid[r][c] = HOUSE
+                elif roll < 0.8: grid[r][c] = PARK
+                else: grid[r][c] = GRASS # Backyards
 
-    # 4. Auto-Tiling Pass (Fix Road Directions)
-    # This logic changes a generic "1" road into Horizontal (5) or Junction (6)
-    # based on what is around it.
-    for r in range(GRID_SIZE):
-        for c in range(GRID_SIZE):
-            if grid[r][c] == ROAD_V: # Check if it's a road
-                
-                # Check neighbors (Up, Down, Left, Right)
-                u = r > 0 and grid[r-1][c] in [ROAD_V, 5, 6]
-                d = r < GRID_SIZE-1 and grid[r+1][c] in [ROAD_V, 5, 6]
-                l = c > 0 and grid[r][c-1] in [ROAD_V, 5, 6]
-                ri = c < GRID_SIZE-1 and grid[r][c+1] in [ROAD_V, 5, 6]
-                
-                neighbor_count = sum([u, d, l, ri])
-
-                if neighbor_count >= 3:
-                    grid[r][c] = ROAD_X  # Junction
-                elif (l or ri) and not (u or d):
-                    grid[r][c] = ROAD_H  # Horizontal
-                else:
-                    grid[r][c] = ROAD_V  # Keep Vertical
+    # 4. CLEANUP PASS
+    # Ensure no building is trapped without road access (Optional polish)
+    # (The grid structure guarantees most have access, so we keep it simple)
 
     return grid
 
 def calculate_metrics(grid):
     """
-    The Heuristic Scoring Engine.
-    Calculates Score (0-100), Pollution, and Budget.
+    Heuristic Scoring Engine
     """
     pollution = 0
-    sustainability = 50 # Start at neutral
+    sustainability = 50 
     budget_used = 0
     
     factories = []
@@ -106,30 +102,22 @@ def calculate_metrics(grid):
             elif tile == FACTORY: factories.append((r, c))
             elif tile == PARK: parks.append((r, c))
             
-            # Budget Calculation
             if tile == ROAD_V or tile == ROAD_H: budget_used += 10
             elif tile == HOUSE: budget_used += 50
             elif tile == FACTORY: budget_used += 200
             elif tile == PARK: budget_used += 100
 
-    # 2. Heuristic Rules
-    
-    # Rule A: Pollution (Factories close to houses is BAD)
+    # 2. Rules
     for f in factories:
-        pollution += 100 # Base pollution per factory
+        pollution += 100 
         for h in houses:
-            # Manhattan Distance
             dist = abs(f[0] - h[0]) + abs(f[1] - h[1])
             if dist < 5:
-                sustainability -= 5 # Heavy penalty for proximity
+                sustainability -= 5 
     
-    # Rule B: Green Energy (Parks increase sustainability)
     sustainability += len(parks) * 5
-    
-    # Rule C: Housing Demand (Need enough houses)
     if len(houses) < 5: sustainability -= 10
     
-    # Clamp Score
     final_score = max(0, min(100, int(sustainability)))
     
     return {
@@ -149,7 +137,8 @@ def home():
 
 @app.route('/api/generate_random', methods=['GET'])
 def get_random_world():
-    grid = generate_smart_road_network()
+    # USES THE NEW REALISTIC GENERATOR
+    grid = generate_real_world_city()
     return jsonify({"grid": grid})
 
 @app.route('/api/calculate_score', methods=['POST'])
@@ -159,7 +148,5 @@ def get_score():
     metrics = calculate_metrics(grid)
     return jsonify(metrics)
 
-# --- VERCEL GUARD (CRITICAL) ---
-# This ensures Vercel handles the start process, not this script.
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
