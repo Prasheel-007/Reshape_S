@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
-import 'package:flutter/foundation.dart'; // REQUIRED: For the Debug/Release switch
+import 'package:flutter/foundation.dart'; // REQUIRED for Platform checks
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -10,13 +10,12 @@ void main() {
 }
 
 // ==========================================
-// 1. THEME ENGINE (The Visual Identity)
+// 1. THEME ENGINE (Restored)
 // ==========================================
 class AppThemes {
-  // THEME A: ARCHITECT (Standard) - Clean, CAD-like
   static final ThemeData architect = ThemeData(
     brightness: Brightness.light,
-    scaffoldBackgroundColor: const Color(0xFFF5F5F7), // Off-white
+    scaffoldBackgroundColor: const Color(0xFFF5F5F7),
     cardColor: Colors.white,
     dividerColor: Colors.grey.shade300,
     primaryColor: const Color(0xFF2C3E50),
@@ -28,7 +27,6 @@ class AppThemes {
     fontFamily: 'Roboto',
   );
 
-  // THEME B: CODER (Cyber) - Matrix, Neon
   static final ThemeData cyber = ThemeData(
     brightness: Brightness.dark,
     scaffoldBackgroundColor: Colors.black,
@@ -44,23 +42,22 @@ class AppThemes {
     textTheme: const TextTheme(bodyMedium: TextStyle(fontFamily: 'Courier')),
   );
 
-  // THEME C: ZEN (Nature) - Earthy, Organic
   static final ThemeData zen = ThemeData(
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: const Color(0xFF2D3436), // Deep Clay
+    scaffoldBackgroundColor: const Color(0xFF2D3436),
     cardColor: const Color(0xFF353B48),
     dividerColor: Colors.white12,
-    primaryColor: const Color(0xFF55EFC4), // Mint Leaf
+    primaryColor: const Color(0xFF55EFC4),
     iconTheme: const IconThemeData(color: Color(0xFF55EFC4)),
     colorScheme: const ColorScheme.dark(
-      primary: Color(0xFFA3C6C0), // Sage
-      secondary: Color(0xFFE0C097), // Sand
+      primary: Color(0xFFA3C6C0),
+      secondary: Color(0xFFE0C097),
     ),
   );
 }
 
 // ==========================================
-// 2. APP ROOT (State Manager)
+// 2. APP ROOT
 // ==========================================
 class ReshapeApp extends StatefulWidget {
   const ReshapeApp({super.key});
@@ -70,7 +67,6 @@ class ReshapeApp extends StatefulWidget {
 }
 
 class _ReshapeAppState extends State<ReshapeApp> {
-  // Default Theme is Architect (Professional)
   ThemeData _currentTheme = AppThemes.architect;
 
   void _changeTheme(ThemeData theme) {
@@ -91,7 +87,7 @@ class _ReshapeAppState extends State<ReshapeApp> {
 }
 
 // ==========================================
-// 3. SPLASH SCREEN (Branding)
+// 3. SPLASH SCREEN (Restored)
 // ==========================================
 class SplashScreen extends StatefulWidget {
   final Function(ThemeData) onThemeChanged;
@@ -105,7 +101,6 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Navigate to Home after 4 seconds
     Timer(const Duration(seconds: 4), () {
       Navigator.pushReplacement(
         context,
@@ -116,14 +111,12 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Force Dark Mode for Cinematic Splash
     return Scaffold(
       backgroundColor: const Color(0xFF101010),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // THE LOGO (With Glow Effect)
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -137,14 +130,12 @@ class _SplashScreenState extends State<SplashScreen> {
                 ],
               ),
               child: Image.asset(
-                'assets/images/Reshape_S.png', // Uses your Hexagon Logo
+                'assets/images/Reshape_S.png',
                 width: 140,
                 height: 140,
               ),
             ),
             const SizedBox(height: 30),
-
-            // APP TITLE
             const Text(
               "RESHAPE_S",
               style: TextStyle(
@@ -155,13 +146,10 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
             const SizedBox(height: 15),
-
-            // SLOGAN
             Text(
               "Reshape the Future. Sustain the World.",
               style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14, fontStyle: FontStyle.italic),
             ),
-
             const SizedBox(height: 60),
             const CircularProgressIndicator(color: Colors.white12, strokeWidth: 2),
             const SizedBox(height: 20),
@@ -174,7 +162,7 @@ class _SplashScreenState extends State<SplashScreen> {
 }
 
 // ==========================================
-// 4. HOME SCREEN (Menu & Navigation)
+// 4. HOME SCREEN (Restored)
 // ==========================================
 class HomeScreen extends StatelessWidget {
   final Function(ThemeData) onThemeChanged;
@@ -187,7 +175,6 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       body: Container(
-        // Dynamic Gradient Background
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -202,8 +189,6 @@ class HomeScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(),
-
-              // HOME LOGO
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -215,7 +200,6 @@ class HomeScreen extends StatelessWidget {
                   height: 120,
                 ),
               ),
-
               const SizedBox(height: 20),
               Text(
                 "Welcome Architect",
@@ -226,21 +210,15 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 40),
-
-              // --- MENU BUTTONS ---
               _buildMenuButton(context, "START SIMULATION", Icons.play_arrow, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const SimulationScreen()));
               }),
-
               _buildMenuButton(context, "VISUAL THEME", Icons.palette, () {
                 _showThemePicker(context);
               }),
-
-              // SYSTEM INFO BUTTON
               _buildMenuButton(context, "SYSTEM ARCHITECTURE", Icons.memory, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const SystemInfoScreen()));
               }),
-
               const Spacer(),
               Text("v1.0.0 • Distinction Build", style: TextStyle(color: theme.disabledColor)),
               const SizedBox(height: 20),
@@ -324,7 +302,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 5. SYSTEM INFO SCREEN (The "How it Works" Page)
+// 5. SYSTEM INFO SCREEN (Restored)
 // ==========================================
 class SystemInfoScreen extends StatelessWidget {
   const SystemInfoScreen({super.key});
@@ -344,54 +322,34 @@ class SystemInfoScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // INTRO CARD
           _buildInfoCard(
             theme,
             "Project Philosophy",
-            "Reshape_S is a simulation environment designed to optimize urban sustainability through algorithmic logic. It bridges the gap between chaotic urban growth and structured engineering.",
+            "Reshape_S is a simulation environment designed to optimize urban sustainability through algorithmic logic.",
             Icons.lightbulb_outline,
           ),
-
           const SizedBox(height: 20),
           Text("TECHNICAL STACK", style: TextStyle(color: theme.disabledColor, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-
-          // TECH STACK CARDS
           _buildTechRow(theme, "Frontend Engine", "Flutter (Dart)", "Isometric Rendering Layer"),
           _buildTechRow(theme, "Backend Logic", "Python (Flask)", "Heuristic Optimization"),
           _buildTechRow(theme, "Data Protocol", "REST API", "JSON Grid Serialization"),
-
           const SizedBox(height: 20),
           Text("ALGORITHMIC LOGIC", style: TextStyle(color: theme.disabledColor, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-
-          // ALGORITHM DETAILS
           _buildInfoCard(
             theme,
             "Procedural Generation (PCG)",
-            "The city layout uses a 'Cellular Zoning' algorithm. It divides the world into arterial blocks and assigns density zones (Industrial vs. Residential) based on Manhattan Distance from the city center.",
+            "The city layout uses a 'Cellular Zoning' algorithm. It divides the world into arterial blocks and assigns density zones.",
             Icons.grid_4x4,
           ),
           const SizedBox(height: 10),
           _buildInfoCard(
             theme,
             "Heuristic Scoring Engine",
-            "Real-time evaluation of city performance. The Python backend calculates 'Pollution Vectors' based on Manhattan Distance between Factories and Residential Zones.",
+            "Real-time evaluation of city performance. The Python backend calculates 'Pollution Vectors' based on Manhattan Distance.",
             Icons.functions,
           ),
-
-          const SizedBox(height: 20),
-          Text("FUTURE ROADMAP", style: TextStyle(color: theme.disabledColor, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-
-          // FUTURE AI
-          _buildInfoCard(
-            theme,
-            "Autonomous Agents (RL)",
-            "The final phase will introduce a Deep Reinforcement Learning (PPO) agent. This AI will autonomously play the game, learning to maximize sustainability scores without human intervention.",
-            Icons.psychology,
-          ),
-
           const SizedBox(height: 40),
           Center(
             child: Text(
@@ -458,7 +416,7 @@ class SystemInfoScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 6. SIMULATION SCREEN (The Map)
+// 6. SIMULATION SCREEN (Logic Preserved, UI Restored)
 // ==========================================
 class SimulationScreen extends StatefulWidget {
   const SimulationScreen({super.key});
@@ -473,7 +431,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
   int score = 0;
   int pollution = 0;
   int budget = 0;
-  bool isMetricsVisible = true;
+  bool isMetricsVisible = true; // Restored UI state
 
   @override
   void initState() {
@@ -485,15 +443,16 @@ class _SimulationScreenState extends State<SimulationScreen> {
   Future<void> _fetchRandomWorld() async {
     setState(() => isLoading = true);
     try {
-
       const String productionUrl = 'https://reshape-s.vercel.app';
       const String localUrl = 'http://127.0.0.1:5000';
 
-      // AUTO-SWITCH: Debug = Localhost, Release = Vercel
-      final String baseUrl = kDebugMode ? localUrl : productionUrl;
+      // 🧠 SMART SWITCH LOGIC
+      bool useLocal = kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
+      final String baseUrl = useLocal ? localUrl : productionUrl;
 
-      String url = '$baseUrl/api/generate_random';
-      print("Connecting to: $baseUrl"); // Debug helper
+      // ✅ UPDATED URL: Points to V1 API
+      String url = '$baseUrl/api/v1/generate_random';
+      print("🔌 Connecting to: $url");
 
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
@@ -503,12 +462,11 @@ class _SimulationScreenState extends State<SimulationScreen> {
           grid = rawGrid.map((row) => List<int>.from(row)).toList();
         });
         _updateScore();
+      } else {
+        print("❌ Server Error: ${response.statusCode}");
       }
     } catch (e) {
       print("Error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Connection Failed. Is the Server Running?"))
-      );
     }
     setState(() => isLoading = false);
   }
@@ -518,9 +476,12 @@ class _SimulationScreenState extends State<SimulationScreen> {
     try {
       const String productionUrl = 'https://reshape-s.vercel.app';
       const String localUrl = 'http://127.0.0.1:5000';
-      final String baseUrl = kDebugMode ? localUrl : productionUrl;
 
-      String url = '$baseUrl/api/calculate_score';
+      bool useLocal = kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
+      final String baseUrl = useLocal ? localUrl : productionUrl;
+
+      // ✅ UPDATED URL: Points to V1 API
+      String url = '$baseUrl/api/v1/calculate_score';
 
       final response = await http.post(
         Uri.parse(url),
@@ -540,14 +501,13 @@ class _SimulationScreenState extends State<SimulationScreen> {
 
   void _cycleTile(int x, int y) {
     int current = grid[x][y];
-    // Don't modify roads (1, 5, 6)
-    if (current == 1 || current == 5 || current == 6) return;
+    if (current == 1 || current == 5 || current == 6) return; // Keep road lock
 
     setState(() {
-      if (current == 0) grid[x][y] = 2;      // House
-      else if (current == 2) grid[x][y] = 3; // Factory
-      else if (current == 3) grid[x][y] = 4; // Park
-      else if (current == 4) grid[x][y] = 0; // Grass
+      if (current == 0) grid[x][y] = 2;
+      else if (current == 2) grid[x][y] = 3;
+      else if (current == 3) grid[x][y] = 4;
+      else if (current == 4) grid[x][y] = 0;
     });
     _updateScore();
   }
@@ -557,52 +517,108 @@ class _SimulationScreenState extends State<SimulationScreen> {
     var theme = Theme.of(context);
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // LAYER 1: MAP
-          Positioned.fill(
-            child: grid.isEmpty
-                ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
-                : InteractiveViewer(
-              boundaryMargin: const EdgeInsets.all(1000),
-              minScale: 0.1,
-              maxScale: 5.0,
-              child: Center(
-                child: SizedBox(
-                  width: 1500,
-                  height: 1500,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: _buildInteractiveIsometricLayer(),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: theme.brightness == Brightness.dark
+                ? [const Color(0xFF1e1e1e), const Color(0xFF000000)]
+                : [const Color(0xFFFFFFFF), const Color(0xFFE0EAFC)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            // 1. THE MAP LAYER (Using the working logic)
+            Positioned.fill(
+              child: grid.isEmpty
+                  ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+                  : InteractiveViewer(
+                boundaryMargin: const EdgeInsets.all(500),
+                minScale: 0.1,
+                maxScale: 4.0,
+                child: Center(
+                  child: SizedBox(
+                    width: 1500,
+                    height: 1500,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: _buildSimpleLayer(), // <--- USING THE WORKING RENDERER
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
 
-          // LAYER 2: METRICS
-          Positioned(top: 40, right: 20, child: _buildFloatingMetricsPanel(theme)),
+            // 2. METRICS PANEL (Restored Polish)
+            Positioned(top: 40, right: 20, child: _buildFloatingMetricsPanel(theme)),
 
-          // LAYER 3: CONTROLS
-          Positioned(bottom: 30, left: 0, right: 0, child: Center(child: _buildControlBar(theme))),
+            // 3. CONTROL BAR (Restored Polish)
+            Positioned(bottom: 30, left: 0, right: 0, child: Center(child: _buildControlBar(theme))),
 
-          // LAYER 4: BACK BUTTON
-          Positioned(
-            top: 40,
-            left: 20,
-            child: FloatingActionButton.small(
-              heroTag: "back_btn",
-              backgroundColor: theme.cardColor,
-              child: Icon(Icons.arrow_back, color: theme.iconTheme.color),
-              onPressed: () => Navigator.pop(context),
+            // 4. BACK BUTTON
+            Positioned(
+              top: 40,
+              left: 20,
+              child: FloatingActionButton.small(
+                heroTag: "back_btn",
+                backgroundColor: theme.cardColor,
+                child: Icon(Icons.arrow_back, color: theme.iconTheme.color),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // --- WIDGETS ---
+  // ✅ THIS IS THE CRITICAL FUNCTION
+  List<Widget> _buildSimpleLayer() {
+    List<Widget> tiles = [];
+    double tileWidth = 64;
+    double tileHeight = 32;
+
+    for (int x = 0; x < grid.length; x++) {
+      for (int y = 0; y < grid[x].length; y++) {
+        double screenX = (x - y) * (tileWidth / 2) + 700; // Center offset
+        double screenY = (x + y) * (tileHeight / 2);
+        int type = grid[x][y];
+
+        double visualOffset = 0;
+        if (type == 2 || type == 3) visualOffset = 12.0;
+        else if (type == 4) visualOffset = 6.0;
+
+        tiles.add(Positioned(
+          left: screenX,
+          top: screenY - visualOffset,
+          child: GestureDetector(
+            onTap: () => _cycleTile(x, y),
+            behavior: HitTestBehavior.translucent,
+            child: Image.asset(
+              _getImagePath(type),
+              width: tileWidth,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+            ),
+          ),
+        ));
+      }
+    }
+    return tiles;
+  }
+
+  String _getImagePath(int type) {
+    if (type == 1) return 'assets/images/road.png';
+    if (type == 5) return 'assets/images/road_h.png';
+    if (type == 6) return 'assets/images/road_x.png';
+    if (type == 2) return 'assets/images/house.png';
+    if (type == 3) return 'assets/images/factory.png';
+    if (type == 4) return 'assets/images/park.png';
+    return 'assets/images/grass.png';
+  }
+
+  // --- POLISHED UI COMPONENTS ---
 
   Widget _buildFloatingMetricsPanel(ThemeData theme) {
     return AnimatedContainer(
@@ -704,47 +720,5 @@ class _SimulationScreenState extends State<SimulationScreen> {
     if (s > 75) return Colors.green;
     if (s > 40) return Colors.orange;
     return Colors.red;
-  }
-
-  List<Widget> _buildInteractiveIsometricLayer() {
-    List<Widget> tiles = [];
-    double tileWidth = 64;
-    double tileHeight = 32;
-
-    for (int x = 0; x < grid.length; x++) {
-      for (int y = 0; y < grid[x].length; y++) {
-        double screenX = (x - y) * (tileWidth / 2);
-        double screenY = (x + y) * (tileHeight / 2);
-        int type = grid[x][y];
-
-        double verticalOffset = 0;
-        if (type == 2) verticalOffset = 12.0;
-        else if (type == 3) verticalOffset = 12.0;
-        else if (type == 4) verticalOffset = 6.0;
-        else if (type == 6) verticalOffset = 0.0;
-
-        tiles.add(Positioned(
-          left: screenX + 700,
-          top: screenY - verticalOffset,
-          child: GestureDetector(
-            onTap: () => _cycleTile(x, y),
-            child: _getAssetTile(type, tileWidth),
-          ),
-        ));
-      }
-    }
-    return tiles;
-  }
-
-  Widget _getAssetTile(int type, double width) {
-    String image = "grass.png";
-    if (type == 1) image = "road.png";
-    if (type == 5) image = "road_h.png";
-    if (type == 6) image = "road_x.png";
-    if (type == 2) image = "house.png";
-    if (type == 3) image = "factory.png";
-    if (type == 4) image = "park.png";
-
-    return Image.asset('assets/images/$image', width: width, fit: BoxFit.contain);
   }
 }
