@@ -4,13 +4,14 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart'; // REQUIRED for Platform checks
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'map_screen.dart'; // ✅ NEW IMPORT FOR V2
 
 void main() {
   runApp(const ReshapeApp());
 }
 
 // ==========================================
-// 1. THEME ENGINE (Restored)
+// 1. THEME ENGINE
 // ==========================================
 class AppThemes {
   static final ThemeData architect = ThemeData(
@@ -87,7 +88,7 @@ class _ReshapeAppState extends State<ReshapeApp> {
 }
 
 // ==========================================
-// 3. SPLASH SCREEN (Restored)
+// 3. SPLASH SCREEN
 // ==========================================
 class SplashScreen extends StatefulWidget {
   final Function(ThemeData) onThemeChanged;
@@ -162,7 +163,7 @@ class _SplashScreenState extends State<SplashScreen> {
 }
 
 // ==========================================
-// 4. HOME SCREEN (Restored)
+// 4. HOME SCREEN
 // ==========================================
 class HomeScreen extends StatelessWidget {
   final Function(ThemeData) onThemeChanged;
@@ -210,15 +211,27 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 40),
+
+              // --- V1 BUTTON ---
               _buildMenuButton(context, "START SIMULATION", Icons.play_arrow, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const SimulationScreen()));
               }),
+
+              // --- V2 BUTTON (NEW) ---
+              _buildMenuButton(context, "REAL WORLD MAP (V2)", Icons.map, () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const MapScreen()));
+              }),
+
+              // --- THEME BUTTON ---
               _buildMenuButton(context, "VISUAL THEME", Icons.palette, () {
                 _showThemePicker(context);
               }),
+
+              // --- SYSTEM BUTTON ---
               _buildMenuButton(context, "SYSTEM ARCHITECTURE", Icons.memory, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const SystemInfoScreen()));
               }),
+
               const Spacer(),
               Text("v1.0.0 • Distinction Build", style: TextStyle(color: theme.disabledColor)),
               const SizedBox(height: 20),
@@ -302,7 +315,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 5. SYSTEM INFO SCREEN (Restored)
+// 5. SYSTEM INFO SCREEN
 // ==========================================
 class SystemInfoScreen extends StatelessWidget {
   const SystemInfoScreen({super.key});
@@ -416,7 +429,7 @@ class SystemInfoScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 6. SIMULATION SCREEN (Logic Preserved, UI Restored)
+// 6. SIMULATION SCREEN
 // ==========================================
 class SimulationScreen extends StatefulWidget {
   const SimulationScreen({super.key});
@@ -431,7 +444,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
   int score = 0;
   int pollution = 0;
   int budget = 0;
-  bool isMetricsVisible = true; // Restored UI state
+  bool isMetricsVisible = true;
 
   @override
   void initState() {
@@ -446,11 +459,10 @@ class _SimulationScreenState extends State<SimulationScreen> {
       const String productionUrl = 'https://reshape-s.vercel.app';
       const String localUrl = 'http://127.0.0.1:5000';
 
-      // 🧠 SMART SWITCH LOGIC
+      // SMART SWITCH LOGIC
       bool useLocal = kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
       final String baseUrl = useLocal ? localUrl : productionUrl;
 
-      // ✅ UPDATED URL: Points to V1 API
       String url = '$baseUrl/api/v1/generate_random';
       print("🔌 Connecting to: $url");
 
@@ -480,7 +492,6 @@ class _SimulationScreenState extends State<SimulationScreen> {
       bool useLocal = kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
       final String baseUrl = useLocal ? localUrl : productionUrl;
 
-      // ✅ UPDATED URL: Points to V1 API
       String url = '$baseUrl/api/v1/calculate_score';
 
       final response = await http.post(
@@ -501,7 +512,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
 
   void _cycleTile(int x, int y) {
     int current = grid[x][y];
-    if (current == 1 || current == 5 || current == 6) return; // Keep road lock
+    if (current == 1 || current == 5 || current == 6) return;
 
     setState(() {
       if (current == 0) grid[x][y] = 2;
@@ -529,7 +540,6 @@ class _SimulationScreenState extends State<SimulationScreen> {
         ),
         child: Stack(
           children: [
-            // 1. THE MAP LAYER (Using the working logic)
             Positioned.fill(
               child: grid.isEmpty
                   ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
@@ -543,20 +553,14 @@ class _SimulationScreenState extends State<SimulationScreen> {
                     height: 1500,
                     child: Stack(
                       clipBehavior: Clip.none,
-                      children: _buildSimpleLayer(), // <--- USING THE WORKING RENDERER
+                      children: _buildSimpleLayer(),
                     ),
                   ),
                 ),
               ),
             ),
-
-            // 2. METRICS PANEL (Restored Polish)
             Positioned(top: 40, right: 20, child: _buildFloatingMetricsPanel(theme)),
-
-            // 3. CONTROL BAR (Restored Polish)
             Positioned(bottom: 30, left: 0, right: 0, child: Center(child: _buildControlBar(theme))),
-
-            // 4. BACK BUTTON
             Positioned(
               top: 40,
               left: 20,
@@ -573,7 +577,6 @@ class _SimulationScreenState extends State<SimulationScreen> {
     );
   }
 
-  // ✅ THIS IS THE CRITICAL FUNCTION
   List<Widget> _buildSimpleLayer() {
     List<Widget> tiles = [];
     double tileWidth = 64;
@@ -581,7 +584,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
 
     for (int x = 0; x < grid.length; x++) {
       for (int y = 0; y < grid[x].length; y++) {
-        double screenX = (x - y) * (tileWidth / 2) + 700; // Center offset
+        double screenX = (x - y) * (tileWidth / 2) + 700;
         double screenY = (x + y) * (tileHeight / 2);
         int type = grid[x][y];
 
@@ -617,8 +620,6 @@ class _SimulationScreenState extends State<SimulationScreen> {
     if (type == 4) return 'assets/images/park.png';
     return 'assets/images/grass.png';
   }
-
-  // --- POLISHED UI COMPONENTS ---
 
   Widget _buildFloatingMetricsPanel(ThemeData theme) {
     return AnimatedContainer(
