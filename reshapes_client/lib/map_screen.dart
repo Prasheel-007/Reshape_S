@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart'; // For mouse buttons
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -9,10 +9,20 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:math' as math;
 
-enum MapMode { satellite, cyberpunk, industrial }
+enum MapMode { satellite, heatmap, zoning }
+enum MapStyle { dataView, blueprint, reference }
+
+class LocationResult {
+  final String displayName;
+  final double lat;
+  final double lon;
+
+  LocationResult({required this.displayName, required this.lat, required this.lon});
+}
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final String visualTheme;
+  const MapScreen({super.key, this.visualTheme = "The Coder"});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -27,18 +37,67 @@ class _MapScreenState extends State<MapScreen> {
   bool _isLoading = false;
 
   bool _showSimulationLayer = true;
-  MapMode _currentMode = MapMode.satellite;
+  MapMode _currentMode = MapMode.zoning;
   bool _isConstructionMode = false;
+
+  late MapStyle _currentStyle;
 
   int _score = 0;
   Map<String, dynamic> _metrics = {"pollution": 0, "budget": 0};
   bool _hasData = false;
 
-  // 🖱️ MULTI-SELECTION STATE (The Fix)
-  // Instead of one point, we store a SET of points.
   final Set<math.Point<int>> _selectedCells = {};
-
   double _rotation = 0.0;
+  String _selectionInfo = "Select a sector to analyze";
+
+  bool _showUI = true;
+  bool _isSearchExpanded = false;
+
+  String _activeMenu = "";
+  bool _isHudExpanded = true;
+  bool _isLegendExpanded = true; // 🎛️ NEW: Legend minimize toggle
+  String _hoveredItemDesc = "";
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.visualTheme == "The Architect") _currentStyle = MapStyle.blueprint;
+    else if (widget.visualTheme == "The Naturalist") _currentStyle = MapStyle.reference;
+    else _currentStyle = MapStyle.dataView;
+  }
+
+  void _toggleMenu(String menu) {
+    setState(() {
+      if (_activeMenu == menu) {
+        _activeMenu = "";
+        _hoveredItemDesc = "";
+      }
+      else {
+        _activeMenu = menu;
+        _hoveredItemDesc = "";
+      }
+    });
+  }
+
+  Future<List<LocationResult>> _getSearchSuggestions(String query) async {
+    if (query.trim().length < 3) return [];
+    try {
+      final url = Uri.parse('https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&limit=5');
+      final response = await http.get(url, headers: {'User-Agent': 'ReshapeS_CityPlanner/1.0'});
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((item) => LocationResult(
+          displayName: item['display_name'],
+          lat: double.parse(item['lat']),
+          lon: double.parse(item['lon']),
+        )).toList();
+      }
+    } catch (e) {
+      print("Search Error: $e");
+    }
+    return [];
+  }
 
   Future<void> _getMyLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -62,7 +121,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _fetchRealWorldChunk(LatLng targetCenter) async {
     setState(() => _isLoading = true);
-    _selectedCells.clear(); // Clear selection on reload
+    _selectedCells.clear();
 
     try {
       String serverUrl = "http://127.0.0.1:5000";
@@ -77,13 +136,22 @@ class _MapScreenState extends State<MapScreen> {
         final data = jsonDecode(response.body);
         if (mounted) {
           setState(() {
-            List<dynamic> rawGrid = data['grid'];
-            _grid = rawGrid.map((row) => List<int>.from(row)).toList();
+            int safeScore = (data['score'] as int?) ?? 0;
+            Map<String, dynamic> safeMetrics = data['metrics'] ?? {"pollution": 0, "budget": 0};
+
+            List<dynamic> rawGrid = data['grid'] ?? [];
+            if (rawGrid.isEmpty) {
+              _grid = [];
+            } else {
+              _grid = rawGrid.map((row) => List<int>.from(row ?? [])).toList();
+            }
+
             _gridOrigin = targetCenter;
-            _updateMetrics(data['score'], data['metrics']);
+            _updateMetrics(safeScore, safeMetrics);
             _showSimulationLayer = true;
+            _hasData = true;
           });
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Map Loaded.')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Urban Data Synced')));
         }
       }
     } catch (e) {
@@ -100,50 +168,72 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // 🖱️ MOUSE INPUT HANDLER (Left vs Right Click)
   void _handlePointerInput(PointerEvent event) {
     if (_grid.isEmpty || _gridOrigin == null || !_isConstructionMode) return;
 
-    // Convert Screen Pixels -> LatLng -> Grid Index
     final LatLng? point = _mapController.camera.pointToLatLng(math.Point(event.localPosition.dx, event.localPosition.dy));
     if (point == null) return;
 
+    int gridRows = _grid.length;
+    int gridCols = _grid.isNotEmpty ? _grid[0].length : 0;
+    if (gridRows == 0 || gridCols == 0) return;
+
     double tileMeters = 10.0;
-    int gridSize = 60;
-    double totalMeters = gridSize * tileMeters;
-
-    double latDegrees = totalMeters / 111000;
+    double latDegrees = (gridRows * tileMeters) / 111000;
     double startLat = _gridOrigin!.latitude - (latDegrees / 2);
-    double stepLat = latDegrees / gridSize;
+    double stepLat = latDegrees / gridRows;
 
-    double lonDegrees = totalMeters / (111000 * math.cos(_gridOrigin!.latitude * math.pi / 180));
+    double lonDegrees = (gridCols * tileMeters) / (111000 * math.cos(_gridOrigin!.latitude * math.pi / 180));
     double startLon = _gridOrigin!.longitude - (lonDegrees / 2);
-    double stepLon = lonDegrees / gridSize;
+    double stepLon = lonDegrees / gridCols;
 
     int x = ((point.latitude - startLat) / stepLat).floor();
     int y = ((point.longitude - startLon) / stepLon).floor();
 
-    if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
+    if (x >= 0 && x < gridRows && y >= 0 && y < gridCols) {
       setState(() {
         var gridPoint = math.Point(x, y);
-
-        // 🖱️ CHECK BUTTONS
-        // kPrimaryButton = Left Click (Select)
-        // kSecondaryButton = Right Click (Deselect)
         if (event.buttons == kPrimaryButton) {
           _selectedCells.add(gridPoint);
         } else if (event.buttons == kSecondaryButton) {
           _selectedCells.remove(gridPoint);
         }
+        _updateSelectionInfo();
       });
     }
+  }
+
+  void _updateSelectionInfo() {
+    if (_selectedCells.isEmpty) {
+      _selectionInfo = "Select a sector to analyze";
+      return;
+    }
+
+    var first = _selectedCells.first;
+    if (first.x < 0 || first.x >= _grid.length || first.y < 0 || first.y >= _grid[0].length) {
+      _selectedCells.clear();
+      return;
+    }
+
+    int count = _selectedCells.length;
+    int type = _grid[first.x][first.y];
+
+    String typeName = "Empty Land";
+    if (type == 1) typeName = "Infrastructure";
+    else if (type == 2) typeName = "Residential";
+    else if (type == 3) typeName = "Industrial";
+    else if (type == 4) typeName = "Green Belt";
+
+    if (count > 20 && type == 2) typeName = "High-Density Residential";
+    if (count > 50 && type == 3) typeName = "Heavy Industry Complex";
+
+    _selectionInfo = "$typeName\nSelected Area: ${count * 100} sq.m";
   }
 
   void _modifyGrid(int newType) {
     if (_selectedCells.isEmpty) return;
 
     setState(() {
-      // Loop through ALL selected cells
       for (var cell in _selectedCells) {
         int r = cell.x;
         int c = cell.y;
@@ -151,21 +241,17 @@ class _MapScreenState extends State<MapScreen> {
           _grid[r][c] = newType;
         }
       }
-
-      // Refresh Grid
       _grid = List.from(_grid);
-
-      // Clear selection after building?
-      // User might want to build multiple things, but usually clearing is safer to avoid accidents.
       _selectedCells.clear();
+      _updateSelectionInfo();
 
-      // Update Scores (Simulated)
-      if (newType == 4) { // Park
+      if (newType == 4) {
         _score = (_score + 5).clamp(0, 100);
-        _metrics['pollution'] = (_metrics['pollution'] - 50).clamp(0, 99999);
-      } else if (newType == 1) { // Road
+        int currentPollution = (_metrics['pollution'] as int?) ?? 0;
+        _metrics['pollution'] = (currentPollution - 50).clamp(0, 99999);
+      } else if (newType == 1) {
         _score = (_score - 2).clamp(0, 100);
-      } else if (newType == 0) { // Demolish
+      } else if (newType == 0) {
         _score = (_score + 1).clamp(0, 100);
       }
     });
@@ -180,47 +266,19 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    Color appBarColor = Colors.blueGrey[900]!;
-    Color accentColor = Colors.white;
-    if (_currentMode == MapMode.cyberpunk) {
-      appBarColor = Colors.black;
-      accentColor = Colors.cyanAccent;
-    } else if (_currentMode == MapMode.industrial) {
-      appBarColor = Colors.brown[900]!;
-      accentColor = Colors.orangeAccent;
+    bool isDark = _currentStyle != MapStyle.blueprint;
+    Color panelColor = isDark ? Colors.black.withOpacity(0.7) : Colors.white.withOpacity(0.8);
+    Color fgColor = isDark ? Colors.white : Colors.black87;
+    Color accentColor = isDark ? Colors.cyanAccent : Colors.blueAccent;
+
+    String mapUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+    if (_currentStyle == MapStyle.blueprint) {
+      mapUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+    } else if (_currentStyle == MapStyle.reference) {
+      mapUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_getModeTitle()),
-        backgroundColor: appBarColor,
-        foregroundColor: accentColor,
-        actions: [
-          IconButton(
-            icon: Icon(_showSimulationLayer ? Icons.visibility : Icons.visibility_off),
-            onPressed: () => setState(() => _showSimulationLayer = !_showSimulationLayer),
-          ),
-          IconButton(
-            icon: Icon(_isConstructionMode ? Icons.build : Icons.build_outlined),
-            color: _isConstructionMode ? accentColor : Colors.grey,
-            onPressed: () {
-              setState(() {
-                _isConstructionMode = !_isConstructionMode;
-                _selectedCells.clear(); // Clear on toggle
-              });
-            },
-          ),
-          PopupMenuButton<MapMode>(
-            icon: const Icon(Icons.layers),
-            onSelected: (MapMode item) => setState(() => _currentMode = item),
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<MapMode>>[
-              const PopupMenuItem(value: MapMode.satellite, child: Text('Satellite (Reality)')),
-              const PopupMenuItem(value: MapMode.cyberpunk, child: Text('Cyberpunk (Builder)')),
-              const PopupMenuItem(value: MapMode.industrial, child: Text('Industrial (Heatmap)')),
-            ],
-          ),
-        ],
-      ),
       body: Stack(
         children: [
           FlutterMap(
@@ -228,138 +286,529 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: _myLocation,
               initialZoom: 17.0,
+              onTap: (tapPos, latLng) {
+                if (_activeMenu.isNotEmpty) setState(() => _activeMenu = "");
+              },
               interactionOptions: InteractionOptions(
                 flags: _isConstructionMode ? InteractiveFlag.none : InteractiveFlag.all,
               ),
             ),
             children: [
               TileLayer(
-                urlTemplate: _currentMode == MapMode.satellite
-                    ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-                    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                urlTemplate: mapUrl,
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.reshapel.reshapes_client',
               ),
-
               if (_showSimulationLayer && _grid.isNotEmpty && _gridOrigin != null)
                 SizedBox.expand(
                   child: CustomPaint(
-                    painter: City3DPainter(
+                    painter: IntelligentGridPainter(
                       grid: _grid,
                       gridOrigin: _gridOrigin!,
                       camera: _mapController.camera,
-                      selectedCells: _selectedCells, // Pass the SET
+                      selectedCells: _selectedCells,
                       mode: _currentMode,
                       isEditMode: _isConstructionMode,
-                      rotation: _rotation,
+                      theme: _currentStyle,
                     ),
                   ),
                 ),
             ],
           ),
 
-          // 🖱️ RAW LISTENER (Captures Right Clicks & Drags)
           if (_isConstructionMode)
             Listener(
               onPointerDown: _handlePointerInput,
-              onPointerMove: _handlePointerInput, // Dragging support!
+              onPointerMove: _handlePointerInput,
               behavior: HitTestBehavior.translucent,
               child: Container(color: Colors.transparent),
             ),
 
-          if (_hasData && _showSimulationLayer)
-            Positioned(top: 20, left: 20, right: 20, child: _buildHUD(accentColor)),
-
-          if (_selectedCells.isNotEmpty && _isConstructionMode)
-            Positioned(bottom: 0, left: 0, right: 0, child: _buildCommandDeck(appBarColor, accentColor)),
-
           Positioned(
-            right: 20, bottom: 180,
-            child: Column(
-              children: [
-                FloatingActionButton.small(heroTag: "rot_l", backgroundColor: Colors.black54, child: const Icon(Icons.rotate_left, color: Colors.white), onPressed: () => _rotateMap(-45)),
-                const SizedBox(height: 5),
-                FloatingActionButton.small(heroTag: "rot_r", backgroundColor: Colors.black54, child: const Icon(Icons.rotate_right, color: Colors.white), onPressed: () => _rotateMap(45)),
-                const SizedBox(height: 5),
-                FloatingActionButton.small(heroTag: "rot_n", backgroundColor: Colors.black54, child: const Text("N", style: TextStyle(color:Colors.white)), onPressed: () {
-                  _rotation = 0; _mapController.rotate(0); setState((){});
-                }),
-              ],
+            top: MediaQuery.of(context).padding.top + 10,
+            right: 20,
+            child: FloatingActionButton.small(
+              heroTag: "zen_btn",
+              backgroundColor: panelColor,
+              foregroundColor: accentColor,
+              onPressed: () {
+                setState(() {
+                  _showUI = !_showUI;
+                  _activeMenu = "";
+                });
+              },
+              child: Icon(_showUI ? Icons.visibility_off : Icons.visibility),
             ),
           ),
 
-          if (_selectedCells.isEmpty)
+          if (_showUI) ...[
+
             Positioned(
-              bottom: 100, right: 20,
-              child: FloatingActionButton(
-                heroTag: "btn_dl",
-                backgroundColor: accentColor,
-                foregroundColor: Colors.black,
-                child: const Icon(Icons.download),
-                onPressed: () => _fetchRealWorldChunk(_mapController.camera.center),
+              top: MediaQuery.of(context).padding.top + 10,
+              left: 20,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 50, height: 50,
+                    decoration: BoxDecoration(
+                      color: panelColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                    ),
+                    child: IconButton(
+                      icon: Icon(Icons.arrow_back, color: fgColor),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _buildAnimatedSearchBar(panelColor, fgColor, accentColor, isDark),
+                ],
               ),
             ),
+
+            if (_hasData)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 70,
+                right: 20,
+                child: _buildCollapsibleHUD(panelColor, fgColor, accentColor),
+              ),
+
+            // 🗺️ THE FIX: Collapsible Legend (Only shows if overlay is active!)
+            if (_hasData && _showSimulationLayer)
+              Positioned(
+                  top: MediaQuery.of(context).padding.top + 160,
+                  right: 20,
+                  child: _buildCollapsibleLegend(panelColor, fgColor, accentColor)
+              ),
+
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 100,
+              left: 20,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: panelColor,
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _dockButton(
+                        Icons.palette_outlined, "Map Style",
+                            () => _toggleMenu("theme"),
+                        _activeMenu == "theme" ? accentColor : fgColor
+                    ),
+                    _dockButton(
+                        Icons.layers, "Data Overlay",
+                            () => _toggleMenu("layer"),
+                        _activeMenu == "layer" ? accentColor : fgColor
+                    ),
+                    _dockButton(
+                        _isConstructionMode ? Icons.build : Icons.build_outlined,
+                        "Edit Mode",
+                            () {
+                          _toggleMenu("");
+                          setState(() {
+                            _isConstructionMode = !_isConstructionMode;
+                            _selectedCells.clear();
+                            _updateSelectionInfo();
+                          });
+                        },
+                        _isConstructionMode ? accentColor : fgColor
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            if (_activeMenu == "theme")
+              _buildHoverGlassMenu(
+                  topOffset: MediaQuery.of(context).padding.top + 100,
+                  isDark: isDark, fg: fgColor, accent: accentColor,
+                  title: "Map Styles",
+                  items: [
+                    _hoverMenuItem("Data View", Icons.dark_mode, MapStyle.dataView, _currentStyle == MapStyle.dataView, fgColor, accentColor,
+                        "High-contrast neon design. Optimized for spotting zoning differences and analyzing infrastructure clearly without visual clutter.",
+                            () => setState(() { _currentStyle = MapStyle.dataView; _activeMenu = ""; })),
+
+                    _hoverMenuItem("Blueprint", Icons.architecture, MapStyle.blueprint, _currentStyle == MapStyle.blueprint, fgColor, accentColor,
+                        "Clean, architectural white-and-blue aesthetic. Best for planning new layouts and drawing road networks.",
+                            () => setState(() { _currentStyle = MapStyle.blueprint; _activeMenu = ""; })),
+
+                    _hoverMenuItem("Reference", Icons.map, MapStyle.reference, _currentStyle == MapStyle.reference, fgColor, accentColor,
+                        "Standard geographical map. Displays street names, landmarks, and terrain for real-world contextual planning.",
+                            () => setState(() { _currentStyle = MapStyle.reference; _activeMenu = ""; })),
+                  ]
+              ),
+
+            if (_activeMenu == "layer")
+              _buildHoverGlassMenu(
+                  topOffset: MediaQuery.of(context).padding.top + 145,
+                  isDark: isDark, fg: fgColor, accent: accentColor,
+                  title: "Data Layers",
+                  items: [
+                    _hoverMenuItem("Reality Glass", Icons.search, MapMode.satellite, _currentMode == MapMode.satellite && _showSimulationLayer, fgColor, accentColor,
+                        "Fades the data grid, allowing you to see the actual satellite imagery, trees, and real-world buildings underneath.",
+                            () => setState(() { _currentMode = MapMode.satellite; _showSimulationLayer = true; _activeMenu = ""; })),
+
+                    _hoverMenuItem("Zoning Map", Icons.business, MapMode.zoning, _currentMode == MapMode.zoning && _showSimulationLayer, fgColor, accentColor,
+                        "Analyzes the allocation of urban land. Identifies distinct districts to help balance residential living, commercial economy, and natural environments.",
+                            () => setState(() { _currentMode = MapMode.zoning; _showSimulationLayer = true; _activeMenu = ""; })),
+
+                    _hoverMenuItem("Pollution Data", Icons.thermostat, MapMode.heatmap, _currentMode == MapMode.heatmap && _showSimulationLayer, fgColor, accentColor,
+                        "Live heatmap showing air quality. Red zones indicate high emissions from industrial sectors and traffic.",
+                            () => setState(() { _currentMode = MapMode.heatmap; _showSimulationLayer = true; _activeMenu = ""; })),
+
+                    // 📴 THE FIX: Grid Off option
+                    _hoverMenuItem("Grid Off", Icons.grid_off, null, !_showSimulationLayer, Colors.grey, Colors.redAccent,
+                        "Hides the data overlay entirely, leaving only the pure map view active.",
+                            () => setState(() { _showSimulationLayer = false; _activeMenu = ""; })),
+                  ]
+              ),
+
+            Positioned(
+              bottom: 120,
+              right: 20,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: panelColor,
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _dockButton(Icons.rotate_left, "Rot L", () => _rotateMap(-45), fgColor),
+                    _dockButton(Icons.rotate_right, "Rot R", () => _rotateMap(45), fgColor),
+                    _dockButton(Icons.navigation, "North", () { _rotation = 0; _mapController.rotate(0); setState((){}); }, fgColor),
+                    if (!_isConstructionMode) _dockButton(Icons.my_location, "GPS", () { _toggleMenu(""); _getMyLocation(); }, fgColor),
+                    if (!_isConstructionMode) _dockButton(Icons.download, "Sync", () { _toggleMenu(""); _fetchRealWorldChunk(_mapController.camera.center); }, accentColor),
+                  ],
+                ),
+              ),
+            ),
+
+            if (_isConstructionMode)
+              Positioned(
+                  bottom: 20, left: 20, right: 20,
+                  child: _buildInspectorPanel(panelColor, fgColor, accentColor)
+              ),
+          ],
 
           if (_isLoading)
             Container(color: Colors.black54, child: Center(child: CircularProgressIndicator(color: accentColor))),
         ],
       ),
-      floatingActionButton: (_selectedCells.isEmpty) ? FloatingActionButton(
-        heroTag: "btn_gps",
-        backgroundColor: appBarColor,
-        foregroundColor: Colors.white,
-        onPressed: _getMyLocation,
-        child: const Icon(Icons.my_location),
-      ) : null,
     );
   }
 
-  String _getModeTitle() {
-    switch(_currentMode) {
-      case MapMode.satellite: return "V6: Satellite Reality";
-      case MapMode.cyberpunk: return "V6: Cyberpunk City";
-      case MapMode.industrial: return "V6: Heatmap Analysis";
-    }
+  Widget _buildCollapsibleHUD(Color bg, Color fg, Color accent) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isHudExpanded ? 160 : 50,
+      height: _isHudExpanded ? 80 : 50,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(_isHudExpanded ? 15 : 25),
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 3))],
+      ),
+      child: _isHudExpanded
+          ? Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("SUSTAINABILITY", style: TextStyle(color: fg.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.bold)),
+                Text("$_score/100", style: TextStyle(color: _score>50?Colors.green:Colors.orange, fontSize: 22, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0, right: 0,
+            child: IconButton(
+              icon: Icon(Icons.close_fullscreen, color: fg, size: 14),
+              onPressed: () => setState(() => _isHudExpanded = false),
+            ),
+          )
+        ],
+      )
+          : IconButton(
+        icon: Icon(Icons.analytics_outlined, color: accent),
+        tooltip: "Open Scoreboard",
+        onPressed: () => setState(() => _isHudExpanded = true),
+      ),
+    );
   }
 
-  Widget _buildHUD(Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+  // 🎛️ THE FIX: COLLAPSIBLE LEGEND
+  Widget _buildCollapsibleLegend(Color bg, Color fg, Color accent) {
+    List<Widget> items = [];
+    if (_currentMode == MapMode.zoning) {
+      items = [
+        _legendItem(Colors.amber, "Residential", fg),
+        _legendItem(Colors.purple, "Industrial", fg),
+        _legendItem(Colors.green, "Nature", fg),
+        _legendItem(Colors.grey, "Roads", fg),
+      ];
+    } else if (_currentMode == MapMode.heatmap) {
+      items = [
+        _legendItem(Colors.redAccent, "Polluted", fg),
+        _legendItem(Colors.green, "Clean", fg),
+      ];
+    } else {
+      items = [_legendItem(accent.withOpacity(0.5), "Structures", fg)];
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isLegendExpanded ? 130 : 50,
+      height: _isLegendExpanded ? (items.length * 20.0) + 30 : 50, // Auto sizes to content
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.85),
-        border: Border.all(color: color, width: 2),
-        borderRadius: BorderRadius.circular(10),
+        color: bg,
+        borderRadius: BorderRadius.circular(_isLegendExpanded ? 15 : 25),
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 3))],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: _isLegendExpanded
+          ? Stack(
         children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text("SUSTAINABILITY", style: TextStyle(color: color, fontSize: 10)),
-            Text("$_score/100", style: TextStyle(color: _score>70?Colors.green:Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
-          ]),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text("POLLUTION: ${_metrics['pollution']}", style: const TextStyle(color: Colors.white, fontSize: 12)),
-          ]),
+          Padding(
+            padding: const EdgeInsets.only(top: 15, left: 15, bottom: 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: items),
+          ),
+          Positioned(
+            top: -5, right: -5,
+            child: IconButton(
+              icon: Icon(Icons.close_fullscreen, color: fg, size: 12),
+              onPressed: () => setState(() => _isLegendExpanded = false),
+            ),
+          )
+        ],
+      )
+          : IconButton(
+        icon: Icon(Icons.list, color: fg),
+        tooltip: "Show Legend",
+        onPressed: () => setState(() => _isLegendExpanded = true),
+      ),
+    );
+  }
+
+  Widget _buildHoverGlassMenu({required double topOffset, required bool isDark, required Color fg, required Color accent, required String title, required List<Widget> items}) {
+    Color glassBg = isDark ? Colors.black.withOpacity(0.6) : Colors.white.withOpacity(0.7);
+    Color borderColor = isDark ? Colors.white30 : Colors.black26;
+
+    return Positioned(
+      top: topOffset,
+      left: 80,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            width: 280,
+            decoration: BoxDecoration(
+              color: glassBg,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: borderColor),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 15, top: 12, bottom: 8),
+                  child: Text(title.toUpperCase(), style: TextStyle(color: fg.withOpacity(0.5), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                ),
+                ...items,
+                if (_hoveredItemDesc.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.black45 : Colors.white54,
+                      border: Border(top: BorderSide(color: borderColor)),
+                    ),
+                    child: Text(
+                      _hoveredItemDesc,
+                      style: TextStyle(color: fg, fontSize: 11, height: 1.4, fontStyle: FontStyle.italic),
+                    ),
+                  )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _hoverMenuItem(String title, IconData icon, dynamic value, bool isSelected, Color fg, Color accent, String description, VoidCallback onTap) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredItemDesc = description),
+      onExit: (_) => setState(() => _hoveredItemDesc = ""),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          color: isSelected ? accent.withOpacity(0.2) : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, color: isSelected ? accent : fg, size: 20),
+              const SizedBox(width: 15),
+              Expanded(child: Text(title, style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 13))),
+              if (isSelected) Icon(Icons.check, color: accent, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dockButton(IconData icon, String tooltip, VoidCallback onTap, Color iconColor) {
+    return IconButton(
+      icon: Icon(icon, color: iconColor, size: 22),
+      tooltip: tooltip,
+      onPressed: onTap,
+    );
+  }
+
+  Widget _buildAnimatedSearchBar(Color bg, Color fg, Color accent, bool isDark) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      width: _isSearchExpanded ? MediaQuery.of(context).size.width * 0.5 : 50,
+      height: 50,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+      ),
+      child: _isSearchExpanded
+          ? Row(
+        children: [
+          const SizedBox(width: 15),
+          Expanded(
+            child: Autocomplete<LocationResult>(
+              optionsBuilder: (TextEditingValue textEditingValue) async {
+                if (textEditingValue.text.isEmpty) return const Iterable<LocationResult>.empty();
+                return await _getSearchSuggestions(textEditingValue.text);
+              },
+              displayStringForOption: (LocationResult option) => option.displayName,
+              onSelected: (LocationResult selection) {
+                setState(() {
+                  _myLocation = LatLng(selection.lat, selection.lon);
+                  _isLoading = true;
+                  _isSearchExpanded = false;
+                });
+                _mapController.move(_myLocation, 17.0);
+                _fetchRealWorldChunk(_myLocation);
+              },
+              fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  style: TextStyle(color: fg, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: "Search location...",
+                    hintStyle: TextStyle(color: fg.withOpacity(0.5), fontSize: 14),
+                    border: InputBorder.none,
+                  ),
+                );
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    color: isDark ? Colors.blueGrey[900] : Colors.white,
+                    elevation: 4,
+                    child: SizedBox(
+                      height: 200,
+                      width: MediaQuery.of(context).size.width * 0.5,
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final option = options.elementAt(index);
+                          return ListTile(
+                            leading: Icon(Icons.location_on, color: accent, size: 16),
+                            title: Text(option.displayName.split(',')[0], style: TextStyle(color: fg, fontSize: 12)),
+                            onTap: () => onSelected(option),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, color: fg, size: 20),
+            onPressed: () => setState(() => _isSearchExpanded = false),
+          ),
+        ],
+      )
+          : IconButton(
+        icon: Icon(Icons.search, color: fg),
+        onPressed: () {
+          setState(() {
+            _isSearchExpanded = true;
+            _activeMenu = "";
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildLegend(Color bg, Color fg, Color accent) {
+    // Helper function replaced by the collapsible version above!
+    return Container();
+  }
+
+  Widget _legendItem(Color c, String label, Color txtColor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4.0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+          const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: txtColor, fontSize: 10)),
         ],
       ),
     );
   }
 
-  Widget _buildCommandDeck(Color bg, Color accent) {
+  Widget _buildInspectorPanel(Color bg, Color fg, Color accent) {
     return Container(
-      padding: const EdgeInsets.all(20),
-      color: bg,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text("${_selectedCells.length} SECTORS SELECTED", style: TextStyle(color: accent, fontWeight: FontWeight.bold)),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(
+          children: [
+            Icon(Icons.precision_manufacturing, color: accent, size: 16),
+            const SizedBox(width: 8),
+            Text(_selectionInfo, style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 12)),
+          ],
+        ),
         const SizedBox(height: 10),
         SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
           _buildBtn("DEMOLISH", Icons.delete, Colors.red, 0),
-          const SizedBox(width:10),
-          _buildBtn("PARK", Icons.park, Colors.green, 4),
-          const SizedBox(width:10),
+          const SizedBox(width:8),
+          _buildBtn("FOREST", Icons.park, Colors.green, 4),
+          const SizedBox(width:8),
           _buildBtn("ROAD", Icons.edit_road, Colors.grey, 1),
-          const SizedBox(width:10),
+          const SizedBox(width:8),
           _buildBtn("HOUSE", Icons.home, Colors.blue, 2),
+          const SizedBox(width:8),
+          _buildBtn("FACTORY", Icons.factory, Colors.purple, 3),
         ]))
       ]),
     );
@@ -368,27 +817,28 @@ class _MapScreenState extends State<MapScreen> {
   Widget _buildBtn(String l, IconData i, Color c, int t) {
     return ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
-            backgroundColor: c.withOpacity(0.2),
-            foregroundColor: c,
-            side: BorderSide(color: c, width: 1)
+          backgroundColor: c.withOpacity(0.15),
+          foregroundColor: c,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
-        onPressed: () => _modifyGrid(t), icon: Icon(i, size:16), label: Text(l)
+        onPressed: () => _modifyGrid(t), icon: Icon(i, size:14), label: Text(l, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))
     );
   }
 }
 
-class City3DPainter extends CustomPainter {
+class IntelligentGridPainter extends CustomPainter {
   final List<List<int>> grid;
   final LatLng gridOrigin;
   final MapCamera camera;
-  final Set<math.Point<int>> selectedCells; // ✅ FIX: Now a Set
+  final Set<math.Point<int>> selectedCells;
   final MapMode mode;
   final bool isEditMode;
-  final double rotation;
+  final MapStyle theme;
 
-  City3DPainter({
+  IntelligentGridPainter({
     required this.grid, required this.gridOrigin, required this.camera,
-    required this.selectedCells, required this.mode, required this.isEditMode, required this.rotation
+    required this.selectedCells, required this.mode, required this.isEditMode, required this.theme
   });
 
   @override
@@ -397,21 +847,16 @@ class City3DPainter extends CustomPainter {
     try {
       double tileMeters = 10.0;
       int gridSize = 60;
-      double totalMeters = gridSize * tileMeters;
-
-      double latDegrees = totalMeters / 111000;
-      double lonDegrees = totalMeters / (111000 * math.cos(gridOrigin.latitude * math.pi / 180));
+      double latDegrees = (gridSize * tileMeters) / 111000;
+      double lonDegrees = (gridSize * tileMeters) / (111000 * math.cos(gridOrigin.latitude * math.pi / 180));
       double startLat = gridOrigin.latitude - (latDegrees / 2);
       double startLon = gridOrigin.longitude - (lonDegrees / 2);
       double stepLat = latDegrees / gridSize;
       double stepLon = lonDegrees / gridSize;
 
-      double extrusionY = -25.0;
-
       for (int x = 0; x < grid.length; x++) {
         for (int y = 0; y < grid[x].length; y++) {
           int type = grid[x][y];
-
           if (type == 0 && !isEditMode) continue;
 
           double cellLat = startLat + (x * stepLat);
@@ -428,77 +873,44 @@ class City3DPainter extends CustomPainter {
 
           if (baseRect.right < 0 || baseRect.left > size.width || baseRect.bottom < 0 || baseRect.top > size.height) continue;
 
-          // ✅ CHECK SET MEMBERSHIP
           bool isSel = selectedCells.contains(math.Point(x, y));
-          _drawBuilding(canvas, baseRect, type, isSel, extrusionY);
+          _drawCell(canvas, baseRect, type, isSel);
         }
       }
     } catch (e) { }
   }
 
-  void _drawBuilding(Canvas canvas, Rect base, int type, bool isSel, double maxH) {
-    Color c = Colors.grey;
-    double height = 0;
+  void _drawCell(Canvas canvas, Rect base, int type, bool isSel) {
+    Color c = Colors.transparent;
+    bool isDark = theme != MapStyle.blueprint;
 
-    if (mode == MapMode.cyberpunk) {
-      if (type == 0) { c = Colors.white; height = 0; }
-      else if (type == 1) { c = Colors.grey[800]!; height=0; }
-      else if (type == 2) { c = Colors.cyan; height=0.4; }
-      else if (type == 3) { c = Colors.deepOrange; height=1.0; }
-      else if (type == 4) { c = Colors.greenAccent; height=0.1; }
-    } else if (mode == MapMode.industrial) {
-      if (type == 1) { c = Colors.amber.withOpacity(0.3); height=0.0; }
-      else if (type == 2) { c = Colors.blueGrey.withOpacity(0.5); height=0.2; }
-      else if (type == 3) { c = Colors.redAccent; height=1.2; }
-      else if (type == 4) { c = Colors.greenAccent; height=0.2; }
-      else { c = Colors.transparent; height=0.0; }
-    } else {
-      if (type == 0) { c = Colors.white; height = 0; }
-      else if (type == 1) { c = Colors.white54; height=0; }
-      else if (type == 2) { c = Colors.blue.withOpacity(0.5); height=0.3; }
-      else if (type == 3) { c = Colors.red.withOpacity(0.5); height=0.8; }
-      else if (type == 4) { c = Colors.green.withOpacity(0.5); height=0.0; }
+    if (mode == MapMode.satellite) {
+      if (type == 0) c = Colors.transparent;
+      else if (type == 4) c = Colors.green.withOpacity(0.15);
+      else c = (isDark ? Colors.cyanAccent : Colors.blue).withOpacity(0.15);
+    }
+    else if (mode == MapMode.zoning) {
+      if (type == 1) c = Colors.grey;
+      else if (type == 2) c = Colors.amber.withOpacity(0.6);
+      else if (type == 3) c = Colors.purple.withOpacity(0.6);
+      else if (type == 4) c = Colors.green.withOpacity(0.6);
+    }
+    else if (mode == MapMode.heatmap) {
+      if (type == 3) c = Colors.redAccent.withOpacity(0.7);
+      else if (type == 1 || type == 2) c = Colors.orangeAccent.withOpacity(0.3);
+      else if (type == 4) c = Colors.greenAccent.withOpacity(0.6);
     }
 
-    if (isSel) { c = Colors.yellow; height = 0.5; }
+    if (isSel) c = Colors.cyanAccent.withOpacity(0.6);
 
-    if (type == 0) {
-      // High visibility selection for empty grids
-      Paint wireframe = Paint()..style=PaintingStyle.stroke..color= isSel ? Colors.yellow : Colors.white.withOpacity(0.1)..strokeWidth= isSel ? 2 : 0.5;
-      if (isSel) {
-        // Fill selected empty grid so you see it
-        canvas.drawRect(base, Paint()..color = Colors.yellow.withOpacity(0.3));
-      }
-      canvas.drawRect(base, wireframe);
-      return;
+    if (c.opacity > 0) {
+      canvas.drawRect(base, Paint()..color = c);
     }
 
-    double hPixels = maxH * height;
-
-    Paint wallPaint = Paint()..style = PaintingStyle.fill..color = c.withOpacity(c.opacity * 0.5);
-    Paint topPaint = Paint()..style = PaintingStyle.fill..color = c;
-    Paint borderPaint = Paint()..style = PaintingStyle.stroke..color = c.withOpacity(1.0)..strokeWidth = 1.0;
-
-    if (hPixels.abs() > 2) {
-      ui.Path wallPath = ui.Path();
-      wallPath.moveTo(base.left, base.bottom);
-      wallPath.lineTo(base.right, base.bottom);
-      wallPath.lineTo(base.right, base.bottom + hPixels);
-      wallPath.lineTo(base.left, base.bottom + hPixels);
-      wallPath.close();
-
-      Rect roof = Rect.fromLTWH(base.left, base.top + hPixels, base.width, base.height);
-
-      canvas.drawPath(wallPath, wallPaint);
-      canvas.drawRect(roof, topPaint);
-      canvas.drawRect(roof, borderPaint);
-
-      canvas.drawLine(base.bottomLeft, roof.bottomLeft, borderPaint);
-      canvas.drawLine(base.bottomRight, roof.bottomRight, borderPaint);
-
-    } else {
-      canvas.drawRect(base, topPaint);
-      if (mode != MapMode.satellite) canvas.drawRect(base, borderPaint);
+    if (isEditMode || isSel) {
+      canvas.drawRect(base, Paint()..style=PaintingStyle.stroke..color=isSel ? Colors.white : Colors.white24..strokeWidth=1);
+    } else if (mode == MapMode.satellite && type != 0) {
+      canvas.drawRect(base, Paint()..style=PaintingStyle.stroke..color=Colors.white30..strokeWidth=0.5);
     }
   }
 
