@@ -233,7 +233,7 @@ class HomeScreen extends StatelessWidget {
               }),
 
               const Spacer(),
-              Text("v1.0.0 • Distinction Build", style: TextStyle(color: theme.disabledColor)),
+              Text("v2.0.0 • Real-World Edition", style: TextStyle(color: theme.disabledColor)),
               const SizedBox(height: 20),
             ],
           ),

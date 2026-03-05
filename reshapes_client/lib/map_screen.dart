@@ -92,10 +92,10 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     try {
-      // ⚠️ Point this to your Vercel URL later when pushing to production!
-      String serverUrl = "http://127.0.0.1:5000";
-      if (defaultTargetPlatform == TargetPlatform.android && !kIsWeb) {
-        // serverUrl = "http://10.0.2.2:5000";
+      // SMART SWITCH: Automatically uses Localhost for debugging, and Vercel for Release!
+      String serverUrl = kDebugMode ? "http://127.0.0.1:5000" : "https://reshape-s.vercel.app";
+      if (kDebugMode && defaultTargetPlatform == TargetPlatform.android && !kIsWeb) {
+        serverUrl = "http://10.0.2.2:5000"; // Android Emulator needs this local IP
       }
 
       final url = Uri.parse('$serverUrl/api/v2/run_ai_survey');
@@ -187,9 +187,10 @@ class _MapScreenState extends State<MapScreen> {
     _selectedCells.clear();
 
     try {
-      String serverUrl = "http://127.0.0.1:5000";
-      if (defaultTargetPlatform == TargetPlatform.android && !kIsWeb) {
-        // serverUrl = "http://10.0.2.2:5000";
+      // SMART SWITCH: Automatically uses Localhost for debugging, and Vercel for Release!
+      String serverUrl = kDebugMode ? "http://127.0.0.1:5000" : "https://reshape-s.vercel.app";
+      if (kDebugMode && defaultTargetPlatform == TargetPlatform.android && !kIsWeb) {
+        serverUrl = "http://10.0.2.2:5000"; // Android Emulator needs this local IP
       }
 
       final url = Uri.parse('$serverUrl/api/v2/get_chunk?lat=${targetCenter.latitude}&lon=${targetCenter.longitude}');

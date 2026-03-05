@@ -145,17 +145,19 @@ def calculate_real_metrics(grid):
         
     final_score = max(0, min(100, int(sustainability)))
     
-    budget = (road_tiles * 500) + (house_count * 2000) + (commercial_count * 15000) + (factory_count * 8000)
+    # 100% Accurate Math: What percentage of this map is nature?
+    total_blocks = GRID_SIZE * GRID_SIZE
+    green_coverage = round((park_count / total_blocks) * 100, 1) if total_blocks > 0 else 0
     
     return {
         "score": final_score,
         "metrics": {
             "pollution": int(pollution),
-            "budget": budget,
+            "green_coverage": green_coverage, # <--- FINALLY SENDS GREEN COVERAGE
             "population": house_count * 4 
         }
     }
-
+    
 @v2.route('/get_chunk', methods=['GET'])
 def get_real_chunk():
     lat = float(request.args.get('lat', 17.4435))
