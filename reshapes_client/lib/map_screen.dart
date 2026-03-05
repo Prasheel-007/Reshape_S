@@ -10,7 +10,7 @@ import 'package:http/http.dart' as http;
 import 'dart:math' as math;
 
 enum MapMode { satellite, heatmap, zoning }
-enum MapStyle { dataView, blueprint, reference }
+enum MapStyle { dataView, blueprint, reference, satelliteMap }
 
 class LocationResult {
   final String displayName;
@@ -41,6 +41,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _isConstructionMode = false;
 
   late MapStyle _currentStyle;
+  bool _showSatelliteLabels = true; // 🏷️ NEW: Satellite Labels Toggle
 
   int _score = 0;
   Map<String, dynamic> _metrics = {"pollution": 0, "budget": 0};
@@ -55,7 +56,7 @@ class _MapScreenState extends State<MapScreen> {
 
   String _activeMenu = "";
   bool _isHudExpanded = true;
-  bool _isLegendExpanded = true; // 🎛️ NEW: Legend minimize toggle
+  bool _isLegendExpanded = true;
   String _hoveredItemDesc = "";
 
   @override
@@ -71,12 +72,74 @@ class _MapScreenState extends State<MapScreen> {
       if (_activeMenu == menu) {
         _activeMenu = "";
         _hoveredItemDesc = "";
-      }
-      else {
+      } else {
         _activeMenu = menu;
         _hoveredItemDesc = "";
       }
     });
+  }
+
+  // 🤖 NEW: Mock function to trigger the AI Computer Vision (Backend connection next!)
+  Future<void> _runAIAutoFill() async {
+    if (_grid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data to analyze! Sync a map first.')));
+      return;
+    }
+
+    setState(() {
+      _activeMenu = "";
+      _isLoading = true;
+    });
+
+    try {
+      // ⚠️ Point this to your Vercel URL later when pushing to production!
+      String serverUrl = "http://127.0.0.1:5000";
+      if (defaultTargetPlatform == TargetPlatform.android && !kIsWeb) {
+        // serverUrl = "http://10.0.2.2:5000";
+      }
+
+      final url = Uri.parse('$serverUrl/api/v2/run_ai_survey');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "grid": _grid,
+          "lat": _gridOrigin!.latitude,
+          "lon": _gridOrigin!.longitude
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['status'] == 'success') {
+          setState(() {
+            List<dynamic> rawGrid = data['grid'] ?? [];
+            _grid = rawGrid.map((row) => List<int>.from(row ?? [])).toList();
+
+            int safeScore = (data['score'] as int?) ?? _score;
+            Map<String, dynamic> safeMetrics = data['metrics'] ?? _metrics;
+            _updateMetrics(safeScore, safeMetrics);
+          });
+
+          int filled = data['filled_blocks'] ?? 0;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('🤖 AI Survey Complete: Zoned $filled missing blocks!'),
+            backgroundColor: Colors.purple,
+          ));
+        } else if (data['status'] == 'insufficient_data') {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('AI Needs more context. Not enough existing buildings to learn from.'),
+            backgroundColor: Colors.orange,
+          ));
+        }
+      }
+    } catch (e) {
+      print("AI Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('AI Engine Offline: $e')));
+    }
+
+    setState(() => _isLoading = false);
   }
 
   Future<List<LocationResult>> _getSearchSuggestions(String query) async {
@@ -151,7 +214,6 @@ class _MapScreenState extends State<MapScreen> {
             _showSimulationLayer = true;
             _hasData = true;
           });
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Urban Data Synced')));
         }
       }
     } catch (e) {
@@ -223,9 +285,11 @@ class _MapScreenState extends State<MapScreen> {
     else if (type == 2) typeName = "Residential";
     else if (type == 3) typeName = "Industrial";
     else if (type == 4) typeName = "Green Belt";
+    else if (type == 5) typeName = "Commercial / IT";
 
     if (count > 20 && type == 2) typeName = "High-Density Residential";
     if (count > 50 && type == 3) typeName = "Heavy Industry Complex";
+    if (count > 40 && type == 5) typeName = "Tech Park / Hub";
 
     _selectionInfo = "$typeName\nSelected Area: ${count * 100} sq.m";
   }
@@ -244,16 +308,6 @@ class _MapScreenState extends State<MapScreen> {
       _grid = List.from(_grid);
       _selectedCells.clear();
       _updateSelectionInfo();
-
-      if (newType == 4) {
-        _score = (_score + 5).clamp(0, 100);
-        int currentPollution = (_metrics['pollution'] as int?) ?? 0;
-        _metrics['pollution'] = (currentPollution - 50).clamp(0, 99999);
-      } else if (newType == 1) {
-        _score = (_score - 2).clamp(0, 100);
-      } else if (newType == 0) {
-        _score = (_score + 1).clamp(0, 100);
-      }
     });
   }
 
@@ -266,7 +320,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isDark = _currentStyle != MapStyle.blueprint;
+    bool isDark = _currentStyle == MapStyle.dataView || _currentStyle == MapStyle.satelliteMap;
     Color panelColor = isDark ? Colors.black.withOpacity(0.7) : Colors.white.withOpacity(0.8);
     Color fgColor = isDark ? Colors.white : Colors.black87;
     Color accentColor = isDark ? Colors.cyanAccent : Colors.blueAccent;
@@ -275,7 +329,9 @@ class _MapScreenState extends State<MapScreen> {
     if (_currentStyle == MapStyle.blueprint) {
       mapUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
     } else if (_currentStyle == MapStyle.reference) {
-      mapUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      mapUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+    } else if (_currentStyle == MapStyle.satelliteMap) {
+      mapUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
     }
 
     return Scaffold(
@@ -299,6 +355,15 @@ class _MapScreenState extends State<MapScreen> {
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.reshapel.reshapes_client',
               ),
+
+              // 🏷️ NEW: Transparent Text Labels Layer for Satellite!
+              if (_currentStyle == MapStyle.satelliteMap && _showSatelliteLabels)
+                TileLayer(
+                  urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+                  subdomains: const ['a', 'b', 'c', 'd'],
+
+                ),
+
               if (_showSimulationLayer && _grid.isNotEmpty && _gridOrigin != null)
                 SizedBox.expand(
                   child: CustomPaint(
@@ -374,10 +439,9 @@ class _MapScreenState extends State<MapScreen> {
                 child: _buildCollapsibleHUD(panelColor, fgColor, accentColor),
               ),
 
-            // 🗺️ THE FIX: Collapsible Legend (Only shows if overlay is active!)
             if (_hasData && _showSimulationLayer)
               Positioned(
-                  top: MediaQuery.of(context).padding.top + 160,
+                  top: MediaQuery.of(context).padding.top + 270, // Pushed down to prevent overlap!
                   right: 20,
                   child: _buildCollapsibleLegend(panelColor, fgColor, accentColor)
               ),
@@ -394,26 +458,18 @@ class _MapScreenState extends State<MapScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    _dockButton(Icons.palette_outlined, "Map Style", () => _toggleMenu("theme"), _activeMenu == "theme" ? accentColor : fgColor),
+                    _dockButton(Icons.layers, "Data Overlay", () => _toggleMenu("layer"), _activeMenu == "layer" ? accentColor : fgColor),
+
+                    // 🤖 NEW: AI Auto-Fill Button in the main dock!
+                    if (_hasData)
+                      _dockButton(Icons.auto_awesome, "AI Survey", _runAIAutoFill, Colors.purpleAccent),
+
                     _dockButton(
-                        Icons.palette_outlined, "Map Style",
-                            () => _toggleMenu("theme"),
-                        _activeMenu == "theme" ? accentColor : fgColor
-                    ),
-                    _dockButton(
-                        Icons.layers, "Data Overlay",
-                            () => _toggleMenu("layer"),
-                        _activeMenu == "layer" ? accentColor : fgColor
-                    ),
-                    _dockButton(
-                        _isConstructionMode ? Icons.build : Icons.build_outlined,
-                        "Edit Mode",
+                        _isConstructionMode ? Icons.build : Icons.build_outlined, "Edit Mode",
                             () {
                           _toggleMenu("");
-                          setState(() {
-                            _isConstructionMode = !_isConstructionMode;
-                            _selectedCells.clear();
-                            _updateSelectionInfo();
-                          });
+                          setState(() { _isConstructionMode = !_isConstructionMode; _selectedCells.clear(); _updateSelectionInfo(); });
                         },
                         _isConstructionMode ? accentColor : fgColor
                     ),
@@ -428,17 +484,27 @@ class _MapScreenState extends State<MapScreen> {
                   isDark: isDark, fg: fgColor, accent: accentColor,
                   title: "Map Styles",
                   items: [
-                    _hoverMenuItem("Data View", Icons.dark_mode, MapStyle.dataView, _currentStyle == MapStyle.dataView, fgColor, accentColor,
-                        "High-contrast neon design. Optimized for spotting zoning differences and analyzing infrastructure clearly without visual clutter.",
-                            () => setState(() { _currentStyle = MapStyle.dataView; _activeMenu = ""; })),
+                    _hoverMenuItem("Data View", Icons.dark_mode, null, _currentStyle == MapStyle.dataView, fgColor, accentColor,
+                        "High-contrast neon design.", () => setState(() { _currentStyle = MapStyle.dataView; _activeMenu = ""; })),
 
-                    _hoverMenuItem("Blueprint", Icons.architecture, MapStyle.blueprint, _currentStyle == MapStyle.blueprint, fgColor, accentColor,
-                        "Clean, architectural white-and-blue aesthetic. Best for planning new layouts and drawing road networks.",
-                            () => setState(() { _currentStyle = MapStyle.blueprint; _activeMenu = ""; })),
+                    _hoverMenuItem("Blueprint", Icons.architecture, null, _currentStyle == MapStyle.blueprint, fgColor, accentColor,
+                        "Clean, architectural aesthetic.", () => setState(() { _currentStyle = MapStyle.blueprint; _activeMenu = ""; })),
 
-                    _hoverMenuItem("Reference", Icons.map, MapStyle.reference, _currentStyle == MapStyle.reference, fgColor, accentColor,
-                        "Standard geographical map. Displays street names, landmarks, and terrain for real-world contextual planning.",
-                            () => setState(() { _currentStyle = MapStyle.reference; _activeMenu = ""; })),
+                    _hoverMenuItem("Reference", Icons.map, null, _currentStyle == MapStyle.reference, fgColor, accentColor,
+                        "Detailed geographical map.", () => setState(() { _currentStyle = MapStyle.reference; _activeMenu = ""; })),
+
+                    _hoverMenuItem("Satellite", Icons.satellite_alt, null, _currentStyle == MapStyle.satelliteMap, fgColor, accentColor,
+                        "Real-world imagery.", () => setState(() { _currentStyle = MapStyle.satelliteMap; _activeMenu = ""; })),
+
+                    // 🏷️ SATELLITE LABEL TOGGLE (Only shows when Satellite is active)
+                    if (_currentStyle == MapStyle.satelliteMap)
+                      _hoverMenuItem(
+                          _showSatelliteLabels ? "Hide Labels" : "Show Labels",
+                          _showSatelliteLabels ? Icons.label_off : Icons.label,
+                          null, false, fgColor, Colors.orangeAccent,
+                          "Toggles street names and landmarks over the satellite photo.",
+                              () => setState(() { _showSatelliteLabels = !_showSatelliteLabels; _activeMenu = ""; })
+                      ),
                   ]
               ),
 
@@ -448,22 +514,17 @@ class _MapScreenState extends State<MapScreen> {
                   isDark: isDark, fg: fgColor, accent: accentColor,
                   title: "Data Layers",
                   items: [
-                    _hoverMenuItem("Reality Glass", Icons.search, MapMode.satellite, _currentMode == MapMode.satellite && _showSimulationLayer, fgColor, accentColor,
-                        "Fades the data grid, allowing you to see the actual satellite imagery, trees, and real-world buildings underneath.",
-                            () => setState(() { _currentMode = MapMode.satellite; _showSimulationLayer = true; _activeMenu = ""; })),
+                    _hoverMenuItem("Reality Glass", Icons.search, null, _currentMode == MapMode.satellite && _showSimulationLayer, fgColor, accentColor,
+                        "Wireframe overlay.", () => setState(() { _currentMode = MapMode.satellite; _showSimulationLayer = true; _activeMenu = ""; })),
 
-                    _hoverMenuItem("Zoning Map", Icons.business, MapMode.zoning, _currentMode == MapMode.zoning && _showSimulationLayer, fgColor, accentColor,
-                        "Analyzes the allocation of urban land. Identifies distinct districts to help balance residential living, commercial economy, and natural environments.",
-                            () => setState(() { _currentMode = MapMode.zoning; _showSimulationLayer = true; _activeMenu = ""; })),
+                    _hoverMenuItem("Zoning Map", Icons.business, null, _currentMode == MapMode.zoning && _showSimulationLayer, fgColor, accentColor,
+                        "Land allocation blocks.", () => setState(() { _currentMode = MapMode.zoning; _showSimulationLayer = true; _activeMenu = ""; })),
 
-                    _hoverMenuItem("Pollution Data", Icons.thermostat, MapMode.heatmap, _currentMode == MapMode.heatmap && _showSimulationLayer, fgColor, accentColor,
-                        "Live heatmap showing air quality. Red zones indicate high emissions from industrial sectors and traffic.",
-                            () => setState(() { _currentMode = MapMode.heatmap; _showSimulationLayer = true; _activeMenu = ""; })),
+                    _hoverMenuItem("Pollution Data", Icons.thermostat, null, _currentMode == MapMode.heatmap && _showSimulationLayer, fgColor, accentColor,
+                        "Air quality heatmap.", () => setState(() { _currentMode = MapMode.heatmap; _showSimulationLayer = true; _activeMenu = ""; })),
 
-                    // 📴 THE FIX: Grid Off option
                     _hoverMenuItem("Grid Off", Icons.grid_off, null, !_showSimulationLayer, Colors.grey, Colors.redAccent,
-                        "Hides the data overlay entirely, leaving only the pure map view active.",
-                            () => setState(() { _showSimulationLayer = false; _activeMenu = ""; })),
+                        "Hides the data overlay entirely.", () => setState(() { _showSimulationLayer = false; _activeMenu = ""; })),
                   ]
               ),
 
@@ -503,11 +564,29 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+
+
   Widget _buildCollapsibleHUD(Color bg, Color fg, Color accent) {
+    // Calculate total zoned area (each block is 10x10 meters = 100 sq meters)
+    int zonedBlocks = 0;
+    for (var row in _grid) {
+      for (var cell in row) {
+        if (cell != 0) zonedBlocks++;
+      }
+    }
+    int totalAreaSqm = zonedBlocks * 100;
+
+    // Safely grab the metrics Python sent us
+    int population = _metrics["population"] ?? 0;
+    // Use dynamic to safely handle both int and double from Python
+    dynamic rawGreen = _metrics["green_coverage"] ?? 0;
+    String greenCoverage = rawGreen.toString();
+    int pollution = _metrics["pollution"] ?? 0;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      width: _isHudExpanded ? 160 : 50,
-      height: _isHudExpanded ? 80 : 50,
+      width: _isHudExpanded ? 220 : 50,
+      height: _isHudExpanded ? 190 : 50,
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(_isHudExpanded ? 15 : 25),
@@ -518,17 +597,33 @@ class _MapScreenState extends State<MapScreen> {
           ? Stack(
         children: [
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.all(15.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("SUSTAINABILITY", style: TextStyle(color: fg.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.bold)),
-                Text("$_score/100", style: TextStyle(color: _score>50?Colors.green:Colors.orange, fontSize: 22, fontWeight: FontWeight.bold)),
+                Text("CITY METRICS", style: TextStyle(color: fg.withOpacity(0.5), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                const SizedBox(height: 5),
+
+                // The Main Score
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Sustainability", style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.bold)),
+                    Text("$_score/100", style: TextStyle(color: _score > 50 ? Colors.green : Colors.orange, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                Divider(color: Colors.grey.withOpacity(0.3)),
+
+                // Detailed Breakdown
+                _metricRow(Icons.people, "Population", "$population", Colors.blueAccent, fg),
+                _metricRow(Icons.nature, "Green Coverage", "$greenCoverage%", Colors.green, fg),
+                _metricRow(Icons.cloud, "Pollution Index", "$pollution AQI", pollution > 50 ? Colors.redAccent : Colors.grey, fg),
+                _metricRow(Icons.square_foot, "Zoned Area", "$totalAreaSqm m²", Colors.cyan, fg),
               ],
             ),
           ),
           Positioned(
-            top: 0, right: 0,
+            top: 5, right: 5,
             child: IconButton(
               icon: Icon(Icons.close_fullscreen, color: fg, size: 14),
               onPressed: () => setState(() => _isHudExpanded = false),
@@ -544,12 +639,32 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // 🎛️ THE FIX: COLLAPSIBLE LEGEND
+  // Helper widget for the HUD rows
+  Widget _metricRow(IconData icon, String label, String value, Color iconColor, Color fg) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 12, color: iconColor),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(color: fg.withOpacity(0.8), fontSize: 11)),
+            ],
+          ),
+          Text(value, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCollapsibleLegend(Color bg, Color fg, Color accent) {
     List<Widget> items = [];
     if (_currentMode == MapMode.zoning) {
       items = [
         _legendItem(Colors.amber, "Residential", fg),
+        _legendItem(Colors.cyan, "Commercial", fg),
         _legendItem(Colors.purple, "Industrial", fg),
         _legendItem(Colors.green, "Nature", fg),
         _legendItem(Colors.grey, "Roads", fg),
@@ -566,7 +681,7 @@ class _MapScreenState extends State<MapScreen> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       width: _isLegendExpanded ? 130 : 50,
-      height: _isLegendExpanded ? (items.length * 20.0) + 30 : 50, // Auto sizes to content
+      height: _isLegendExpanded ? (items.length * 20.0) + 30 : 50,
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(_isLegendExpanded ? 15 : 25),
@@ -593,6 +708,19 @@ class _MapScreenState extends State<MapScreen> {
         icon: Icon(Icons.list, color: fg),
         tooltip: "Show Legend",
         onPressed: () => setState(() => _isLegendExpanded = true),
+      ),
+    );
+  }
+
+  Widget _legendItem(Color c, String text, Color fg) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 8),
+          Text(text, style: TextStyle(color: fg, fontSize: 10)),
+        ],
       ),
     );
   }
@@ -763,25 +891,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildLegend(Color bg, Color fg, Color accent) {
-    // Helper function replaced by the collapsible version above!
-    return Container();
-  }
-
-  Widget _legendItem(Color c, String label, Color txtColor) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: txtColor, fontSize: 10)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildInspectorPanel(Color bg, Color fg, Color accent) {
     return Container(
       padding: const EdgeInsets.all(15),
@@ -809,6 +918,8 @@ class _MapScreenState extends State<MapScreen> {
           _buildBtn("HOUSE", Icons.home, Colors.blue, 2),
           const SizedBox(width:8),
           _buildBtn("FACTORY", Icons.factory, Colors.purple, 3),
+          const SizedBox(width:8),
+          _buildBtn("COMMERCIAL", Icons.business_center, Colors.cyan, 5),
         ]))
       ]),
     );
@@ -881,36 +992,73 @@ class IntelligentGridPainter extends CustomPainter {
   }
 
   void _drawCell(Canvas canvas, Rect base, int type, bool isSel) {
-    Color c = Colors.transparent;
-    bool isDark = theme != MapStyle.blueprint;
+    Color fillColor = Colors.transparent;
+    Color borderColor = Colors.transparent;
+    double borderWidth = 0.0;
 
-    if (mode == MapMode.satellite) {
-      if (type == 0) c = Colors.transparent;
-      else if (type == 4) c = Colors.green.withOpacity(0.15);
-      else c = (isDark ? Colors.cyanAccent : Colors.blue).withOpacity(0.15);
+    // 🌟 DEDICATED SATELLITE STYLING
+    if (theme == MapStyle.satelliteMap) {
+      if (mode == MapMode.satellite) {
+        // Reality Glass: High tech glowing edges, almost empty inside
+        if (type != 0) {
+          fillColor = Colors.cyanAccent.withOpacity(0.05);
+          borderColor = Colors.cyanAccent.withOpacity(0.4);
+          borderWidth = 1.0;
+        }
+      }
+      else if (mode == MapMode.zoning) {
+        // Zoning: Thin neon outlines so we can see the real buildings inside
+        if (type == 1) { fillColor = Colors.white24; } // Roads
+        else if (type == 2) { fillColor = Colors.amber.withOpacity(0.2); borderColor = Colors.amber; borderWidth = 1.5; }
+        else if (type == 3) { fillColor = Colors.purpleAccent.withOpacity(0.2); borderColor = Colors.purpleAccent; borderWidth = 1.5; }
+        else if (type == 4) { fillColor = Colors.greenAccent.withOpacity(0.2); borderColor = Colors.greenAccent; borderWidth = 1.0; }
+        else if (type == 5) { fillColor = Colors.cyanAccent.withOpacity(0.2); borderColor = Colors.cyanAccent; borderWidth = 1.5; }
+      }
+      else if (mode == MapMode.heatmap) {
+        // Heatmap: Vibrant gradient-like glowing spots
+        if (type == 3) { fillColor = Colors.redAccent.withOpacity(0.6); }
+        else if (type == 5 || type == 1 || type == 2) { fillColor = Colors.orangeAccent.withOpacity(0.2); }
+        else if (type == 4) { fillColor = Colors.greenAccent.withOpacity(0.4); }
+      }
     }
-    else if (mode == MapMode.zoning) {
-      if (type == 1) c = Colors.grey;
-      else if (type == 2) c = Colors.amber.withOpacity(0.6);
-      else if (type == 3) c = Colors.purple.withOpacity(0.6);
-      else if (type == 4) c = Colors.green.withOpacity(0.6);
-    }
-    else if (mode == MapMode.heatmap) {
-      if (type == 3) c = Colors.redAccent.withOpacity(0.7);
-      else if (type == 1 || type == 2) c = Colors.orangeAccent.withOpacity(0.3);
-      else if (type == 4) c = Colors.greenAccent.withOpacity(0.6);
+    // 🎨 STANDARD STYLING (For Dark Mode, Blueprint, etc)
+    else {
+      if (mode == MapMode.satellite) {
+        if (type == 4) fillColor = Colors.green.withOpacity(0.15);
+        else if (type != 0) fillColor = Colors.cyanAccent.withOpacity(0.15);
+      }
+      else if (mode == MapMode.zoning) {
+        if (type == 1) fillColor = Colors.grey;
+        else if (type == 2) fillColor = Colors.amber.withOpacity(0.6);
+        else if (type == 3) fillColor = Colors.purple.withOpacity(0.6);
+        else if (type == 4) fillColor = Colors.green.withOpacity(0.6);
+        else if (type == 5) fillColor = Colors.cyan.withOpacity(0.7);
+      }
+      else if (mode == MapMode.heatmap) {
+        if (type == 3) fillColor = Colors.redAccent.withOpacity(0.7);
+        else if (type == 1 || type == 2) fillColor = Colors.orangeAccent.withOpacity(0.3);
+        else if (type == 4) fillColor = Colors.greenAccent.withOpacity(0.6);
+        else if (type == 5) fillColor = Colors.orangeAccent.withOpacity(0.5);
+      }
     }
 
-    if (isSel) c = Colors.cyanAccent.withOpacity(0.6);
-
-    if (c.opacity > 0) {
-      canvas.drawRect(base, Paint()..color = c);
+    if (isSel) {
+      fillColor = Colors.white.withOpacity(0.3);
+      borderColor = Colors.white;
+      borderWidth = 2.0;
     }
 
-    if (isEditMode || isSel) {
-      canvas.drawRect(base, Paint()..style=PaintingStyle.stroke..color=isSel ? Colors.white : Colors.white24..strokeWidth=1);
-    } else if (mode == MapMode.satellite && type != 0) {
-      canvas.drawRect(base, Paint()..style=PaintingStyle.stroke..color=Colors.white30..strokeWidth=0.5);
+    // Paint the fill
+    if (fillColor.opacity > 0) {
+      canvas.drawRect(base, Paint()..color = fillColor);
+    }
+    // Paint the borders
+    if (borderWidth > 0) {
+      canvas.drawRect(base, Paint()..style = PaintingStyle.stroke..color = borderColor..strokeWidth = borderWidth);
+    }
+    // Edit mode grid lines
+    if (isEditMode && !isSel) {
+      canvas.drawRect(base, Paint()..style = PaintingStyle.stroke..color = Colors.white24..strokeWidth = 0.5);
     }
   }
 
