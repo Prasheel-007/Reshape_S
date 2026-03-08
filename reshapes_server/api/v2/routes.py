@@ -5,8 +5,6 @@ import numpy as np
 from flask import Blueprint, jsonify, request
 import requests
 import math
-import numpy as np
-from sklearn.cluster import KMeans
 
 v2 = Blueprint('v2', __name__)
 
@@ -14,7 +12,7 @@ v2 = Blueprint('v2', __name__)
 GRID_SIZE = 60  
 TILE_METERS = 10 
 
-# 🏢 ADDED NEW COMMERCIAL CATEGORY (5)
+# 🏢 CATEGORIES
 EMPTY, ROAD, HOUSE, FACTORY, PARK, COMMERCIAL = 0, 1, 2, 3, 4, 5
 
 OVERPASS_ENDPOINTS = [
@@ -25,9 +23,8 @@ OVERPASS_ENDPOINTS = [
 
 def get_osm_data(lat, lon):
     radius = (GRID_SIZE * TILE_METERS) / 1.5 
-    headers = {'User-Agent': 'ReshapeS_CityPlanner/3.2'}
+    headers = {'User-Agent': 'ReshapeS_CityPlanner/3.3'}
     
-    # 🧠 THE SMART QUERY: Now searches for NODES (Pins) as well as WAYS (Polygons)
     query = f"""
     [out:json][timeout:25];
     (
@@ -56,7 +53,7 @@ def get_osm_data(lat, lon):
                 print(f"✅ Success! Found {len(data.get('elements', []))} elements.")
                 return data
         except Exception as e:
-            print(f"❌ Server {endpoint} failed.")
+            print(f"❌ Server {endpoint} failed: {e}")
             
     return None
 
@@ -153,11 +150,11 @@ def calculate_real_metrics(grid):
         "score": final_score,
         "metrics": {
             "pollution": int(pollution),
-            "green_coverage": green_coverage, # <--- FINALLY SENDS GREEN COVERAGE
+            "green_coverage": green_coverage, 
             "population": house_count * 4 
         }
     }
-    
+
 @v2.route('/get_chunk', methods=['GET'])
 def get_real_chunk():
     lat = float(request.args.get('lat', 17.4435))
@@ -167,7 +164,7 @@ def get_real_chunk():
     data = get_osm_data(lat, lon)
     
     if not data: 
-        return jsonify({"grid": grid, "status": "offline", "score": 0, "metrics": {"pollution":0, "budget":0}})
+        return jsonify({"grid": grid, "status": "offline", "score": 0, "metrics": {"pollution":0, "green_coverage":0, "population":0}})
 
     lat_dist = 111000
     lon_dist = 111000 * math.cos(math.radians(lat))
@@ -244,25 +241,67 @@ def get_real_chunk():
         "metrics": analysis['metrics'] 
     })
 
-# Helper function: Downloads the exact Esri satellite photo
+# Helper function: Downloads and stitches 3x3 Esri satellite tiles for perfect alignment
 def get_esri_tile(lat, lon, zoom=17):
+    import math
+    from PIL import Image
+    import io
+
+    # 1. Math to find the Center Tile
     lat_rad = math.radians(lat)
     n = 2.0 ** zoom
-    xtile = int((lon + 180.0) / 360.0 * n)
-    ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+    x_exact = (lon + 180.0) / 360.0 * n
+    y_exact = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
     
-    url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{zoom}/{ytile}/{xtile}"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            img = Image.open(io.BytesIO(response.content)).convert('RGB')
-            # 🧠 UPGRADE: Resize to 240x240! 
-            # This gives us a 4x4 pixel block of detail for every single 10m grid cell!
-            return img.resize((GRID_SIZE * 4, GRID_SIZE * 4))
-    except Exception as e:
-        print(f"Image download failed: {e}")
-    return None
+    xtile = int(x_exact)
+    ytile = int(y_exact)
+    
+    # Pixel offset of the center coordinate WITHIN the center tile
+    px_x = int((x_exact - xtile) * 256)
+    px_y = int((y_exact - ytile) * 256)
+
+    # 2. Fetch a 3x3 Grid of Tiles
+    stitched_img = Image.new('RGB', (256 * 3, 256 * 3))
+    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    for dy in [-1, 0, 1]:
+        for dx in [-1, 0, 1]:
+            cur_x = xtile + dx
+            cur_y = ytile + dy
+            url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{zoom}/{cur_y}/{cur_x}"
+            try:
+                response = requests.get(url, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    img = Image.open(io.BytesIO(response.content)).convert('RGB')
+                    
+                    # Paste into the 3x3 grid
+                    paste_x = (dx + 1) * 256
+                    paste_y = (dy + 1) * 256
+                    stitched_img.paste(img, (paste_x, paste_y))
+            except Exception as e:
+                print(f"Failed to fetch tile {cur_x},{cur_y}: {e}")
+
+    # 3. Crop a perfectly centered 600x600 px area around the user's coordinate
+    # Zoom level 17 is roughly ~1.19 meters per pixel at the equator.
+    # To get a 600m view, 600px is a solid approximation.
+    crop_size = 600
+    half_crop = crop_size // 2
+    
+    # Calculate exact center pixel in the 3x3 stitched image
+    center_px_x = 256 + px_x  # 256 is the offset of the middle tile
+    center_px_y = 256 + px_y
+    
+    left = center_px_x - half_crop
+    top = center_px_y - half_crop
+    right = center_px_x + half_crop
+    bottom = center_px_y + half_crop
+    
+    cropped_img = stitched_img.crop((left, top, right, bottom))
+    
+    # Resize to exact grid resolution needed by the AI (4 pixels per 10m block = 240x240)
+    final_img = cropped_img.resize((GRID_SIZE * 4, GRID_SIZE * 4), Image.Resampling.LANCZOS)
+    return final_img
 
 @v2.route('/run_ai_survey', methods=['POST'])
 def run_ai_survey():
@@ -278,62 +317,92 @@ def run_ai_survey():
         grid_array = np.array(grid)
         rows, cols = grid_array.shape
         
-        # 1. CONTEXT ENGINE: Learn from OpenStreetMap
-        existing_coords = []
-        existing_labels = []
-        for r in range(rows):
-            for c in range(cols):
-                val = grid_array[r][c]
-                if val in [HOUSE, FACTORY, COMMERCIAL]:
-                    existing_coords.append([r, c])
-                    existing_labels.append(val)
-        
-        knn = None
-        if len(existing_coords) > 3:
-            knn = KNeighborsClassifier(n_neighbors=3)
-            knn.fit(existing_coords, existing_labels)
-        
-        # 2. VISION ENGINE: Download the high-detail image
+        # 1. VISION ENGINE: Download the high-detail image FIRST
         img = get_esri_tile(lat, lon, zoom=17)
         if not img:
              return jsonify({"status": "error", "message": "AI could not fetch satellite feed."})
         
         pixels = np.array(img)
+        
+        # 2. FEATURE EXTRACTION & ML TRAINING
+        X_train = [] 
+        y_train = [] 
+        
+        cell_features = {} 
+        
+        for r in range(rows):
+            for c in range(cols):
+                block = pixels[r*4:(r+1)*4, c*4:(c+1)*4]
+                
+                avg_R = np.mean(block[:,:,0])
+                avg_G = np.mean(block[:,:,1])
+                avg_B = np.mean(block[:,:,2])
+                variance = np.var(block) # Texture
+                
+                # 🔪 NEW: Sobel Edge Detection (Approximation for speed)
+                # Helps distinguish between flat grey road and structured grey building roofs
+                gray_block = np.mean(block, axis=2)
+                dx = np.abs(np.diff(gray_block, axis=1, append=gray_block[:, -1:]))
+                dy = np.abs(np.diff(gray_block, axis=0, append=gray_block[-1:, :]))
+                edge_intensity = np.mean(dx) + np.mean(dy)
+                
+                features = [avg_R, avg_G, avg_B, variance, edge_intensity]
+                cell_features[(r, c)] = features
+                
+                val = grid_array[r][c]
+                
+                # 🔥 FIX 1: Don't let the AI learn from empty dirt!
+                if val in [HOUSE, FACTORY, COMMERCIAL]:
+                    # Only train on buildings if they actually have high texture (roofs/edges)
+                    if variance > 80: 
+                        X_train.append(features)
+                        y_train.append(val)
+                elif val in [PARK, ROAD]:
+                    X_train.append(features)
+                    y_train.append(val)
+        
+        knn = None
+        if len(X_train) > 10: 
+            knn = KNeighborsClassifier(n_neighbors=5, weights='distance')
+            knn.fit(X_train, y_train)
+        
         filled_count = 0
         
-        # 3. TEXTURE ANALYSIS: Scan blocks instead of single pixels
+        # 3. SMART PREDICTION: Fill the empty gaps
         for r in range(rows):
             for c in range(cols):
                 if grid_array[r][c] == EMPTY:
-                    # Extract the 4x4 pixel block for this specific grid square
-                    block = pixels[r*4:(r+1)*4, c*4:(c+1)*4]
+                    feats = cell_features[(r, c)]
+                    avg_R, avg_G, avg_B, variance, edge_intensity = feats
                     
-                    # Calculate the average color of the block
-                    avg_R = np.mean(block[:,:,0])
-                    avg_G = np.mean(block[:,:,1])
-                    avg_B = np.mean(block[:,:,2])
-                    
-                    # 🧠 Calculate Texture (Variance)
-                    # High variance = Buildings/Details. Low variance = Flat dirt/roads.
-                    variance = np.var(block)
-                    
-                    # RULE A: Is it Nature? (Green dominates)
+                    # Rule A: Absolute Nature Check (Very Green)
                     if avg_G > avg_R + 5 and avg_G > avg_B + 5:
                         grid_array[r][c] = PARK
                         filled_count += 1
+                        continue
                         
-                    # RULE B: Is it a Building?
-                    # 1. Texture Check: Must have detail (variance > 100) to ignore smooth dirt.
-                    # 2. Color Check: Reject brown/tan dirt (Red - Blue < 40).
-                    # 3. Shadow Check: Lowered the brightness threshold to 60 to catch dark roofs!
-                    # RULE B: Aggressive Building Check (Original version)
-                    elif avg_R > 100 and avg_G > 100 and avg_B > 100 and abs(int(avg_R)-int(avg_G)) < 30 and abs(int(avg_G)-int(avg_B)) < 30:
-                        if knn:
-                            predicted_type = knn.predict([[r, c]])[0]
-                            grid_array[r][c] = int(predicted_type)
-                        else:
+                    # Rule B: The "Dirt/Road Catcher"
+                    # If it is flat (low edges) and brownish/grey, leave it empty or make it road
+                    if edge_intensity < 15 and variance < 80:
+                        continue # Leave it empty!
+                        
+                    # Rule C: Machine Learning Prediction (KNN)
+                    if knn:
+                        predicted_type = knn.predict([feats])[0]
+                        
+                        if predicted_type in [HOUSE, FACTORY, COMMERCIAL, PARK]:
+                            # Only trust building predictions if there are actually edges (roofs/structures)
+                            if predicted_type != PARK and edge_intensity > 20:
+                                grid_array[r][c] = int(predicted_type)
+                                filled_count += 1
+                            elif predicted_type == PARK:
+                                grid_array[r][c] = int(predicted_type)
+                                filled_count += 1
+                    else:
+                        # Fallback heuristic if not enough training data
+                        if edge_intensity > 30 and variance > 100 and abs(avg_R - avg_B) < 30:
                             grid_array[r][c] = HOUSE
-                        filled_count += 1
+                            filled_count += 1
 
         analysis = calculate_real_metrics(grid_array.tolist())
 

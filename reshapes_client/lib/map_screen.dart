@@ -95,7 +95,7 @@ class _MapScreenState extends State<MapScreen> {
       // SMART SWITCH: Automatically uses Localhost for debugging, and Vercel for Release!
       String serverUrl = kDebugMode ? "http://127.0.0.1:5000" : "https://reshape-s.vercel.app";
       if (kDebugMode && defaultTargetPlatform == TargetPlatform.android && !kIsWeb) {
-        serverUrl = "http://10.0.2.2:5000"; // Android Emulator needs this local IP
+        serverUrl = "http://10.0.2.2:5000"; // UNCOMMENTED: Android Emulator needs this local IP
       }
 
       final url = Uri.parse('$serverUrl/api/v2/run_ai_survey');
@@ -243,10 +243,12 @@ class _MapScreenState extends State<MapScreen> {
 
     double tileMeters = 10.0;
     double latDegrees = (gridRows * tileMeters) / 111000;
+    // Fix: Match the exact backend mathematical approach for consistency
+    double lonDegrees = (gridCols * tileMeters) / (111000 * math.cos(math.pi * _gridOrigin!.latitude / 180));
+    
     double startLat = _gridOrigin!.latitude - (latDegrees / 2);
     double stepLat = latDegrees / gridRows;
 
-    double lonDegrees = (gridCols * tileMeters) / (111000 * math.cos(_gridOrigin!.latitude * math.pi / 180));
     double startLon = _gridOrigin!.longitude - (lonDegrees / 2);
     double stepLon = lonDegrees / gridCols;
 
@@ -960,7 +962,8 @@ class IntelligentGridPainter extends CustomPainter {
       double tileMeters = 10.0;
       int gridSize = 60;
       double latDegrees = (gridSize * tileMeters) / 111000;
-      double lonDegrees = (gridSize * tileMeters) / (111000 * math.cos(gridOrigin.latitude * math.pi / 180));
+      double lonDegrees = (gridSize * tileMeters) / (111000 * math.cos(math.pi * gridOrigin.latitude / 180));
+      
       double startLat = gridOrigin.latitude - (latDegrees / 2);
       double startLon = gridOrigin.longitude - (lonDegrees / 2);
       double stepLat = latDegrees / gridSize;
