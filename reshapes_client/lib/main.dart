@@ -105,7 +105,9 @@ class _SplashScreenState extends State<SplashScreen> {
     Timer(const Duration(seconds: 4), () {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => HomeScreen(onThemeChanged: widget.onThemeChanged)),
+        MaterialPageRoute(
+            builder: (context) =>
+                HomeScreen(onThemeChanged: widget.onThemeChanged)),
       );
     });
   }
@@ -126,8 +128,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   BoxShadow(
                       color: Colors.greenAccent.withOpacity(0.15),
                       blurRadius: 60,
-                      spreadRadius: 10
-                  )
+                      spreadRadius: 10)
                 ],
               ),
               child: Image.asset(
@@ -149,12 +150,17 @@ class _SplashScreenState extends State<SplashScreen> {
             const SizedBox(height: 15),
             Text(
               "Reshape the Future. Sustain the World.",
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14, fontStyle: FontStyle.italic),
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic),
             ),
             const SizedBox(height: 60),
-            const CircularProgressIndicator(color: Colors.white12, strokeWidth: 2),
+            const CircularProgressIndicator(
+                color: Colors.white12, strokeWidth: 2),
             const SizedBox(height: 20),
-            const Text("Initializing Neural Engine...", style: TextStyle(color: Colors.white24, fontSize: 10)),
+            const Text("Initializing Neural Engine...",
+                style: TextStyle(color: Colors.white24, fontSize: 10)),
           ],
         ),
       ),
@@ -193,7 +199,11 @@ class HomeScreen extends StatelessWidget {
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: theme.primaryColor.withOpacity(0.2), blurRadius: 30)],
+                  boxShadow: [
+                    BoxShadow(
+                        color: theme.primaryColor.withOpacity(0.2),
+                        blurRadius: 30)
+                  ],
                 ),
                 child: Image.asset(
                   'assets/images/Reshape_S.png',
@@ -207,19 +217,23 @@ class HomeScreen extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w300,
-                    color: theme.colorScheme.primary
-                ),
+                    color: theme.colorScheme.primary),
               ),
               const SizedBox(height: 40),
 
               // --- V1 BUTTON ---
-              _buildMenuButton(context, "START SIMULATION", Icons.play_arrow, () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const SimulationScreen()));
+              _buildMenuButton(context, "START SIMULATION", Icons.play_arrow,
+                  () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const SimulationScreen()));
               }),
 
               // --- V2 BUTTON (NEW) ---
               _buildMenuButton(context, "REAL WORLD MAP (V2)", Icons.map, () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const MapScreen()));
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (context) => const MapScreen()));
               }),
 
               // --- THEME BUTTON ---
@@ -228,12 +242,17 @@ class HomeScreen extends StatelessWidget {
               }),
 
               // --- SYSTEM BUTTON ---
-              _buildMenuButton(context, "SYSTEM ARCHITECTURE", Icons.memory, () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const SystemInfoScreen()));
+              _buildMenuButton(context, "SYSTEM ARCHITECTURE", Icons.memory,
+                  () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const SystemInfoScreen()));
               }),
 
               const Spacer(),
-              Text("v2.0.0 • Real-World Edition", style: TextStyle(color: theme.disabledColor)),
+              Text("v2.0.0 • Real-World Edition",
+                  style: TextStyle(color: theme.disabledColor)),
               const SizedBox(height: 20),
             ],
           ),
@@ -246,14 +265,16 @@ class HomeScreen extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return Container(
           padding: const EdgeInsets.all(20),
           height: 320,
           child: Column(
             children: [
-              const Text("Select Interface Style", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text("Select Interface Style",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               const Divider(),
               ListTile(
@@ -290,7 +311,8 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuButton(BuildContext context, String text, IconData icon, VoidCallback onTap) {
+  Widget _buildMenuButton(
+      BuildContext context, String text, IconData icon, VoidCallback onTap) {
     var theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -302,11 +324,14 @@ class HomeScreen extends StatelessWidget {
             backgroundColor: theme.cardColor,
             foregroundColor: theme.colorScheme.primary,
             elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             side: BorderSide(color: theme.dividerColor),
           ),
           icon: Icon(icon),
-          label: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+          label: Text(text,
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, letterSpacing: 1)),
           onPressed: onTap,
         ),
       ),
@@ -326,11 +351,13 @@ class SystemInfoScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("System Architecture", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("System Architecture",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         iconTheme: theme.iconTheme,
-        titleTextStyle: TextStyle(color: theme.textTheme.bodyMedium?.color, fontSize: 20),
+        titleTextStyle:
+            TextStyle(color: theme.textTheme.bodyMedium?.color, fontSize: 20),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -342,13 +369,24 @@ class SystemInfoScreen extends StatelessWidget {
             Icons.lightbulb_outline,
           ),
           const SizedBox(height: 20),
-          Text("TECHNICAL STACK", style: TextStyle(color: theme.disabledColor, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+          Text("TECHNICAL STACK",
+              style: TextStyle(
+                  color: theme.disabledColor,
+                  letterSpacing: 1.5,
+                  fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-          _buildTechRow(theme, "Frontend Engine", "Flutter (Dart)", "Isometric Rendering Layer"),
-          _buildTechRow(theme, "Backend Logic", "Python (Flask)", "Heuristic Optimization"),
-          _buildTechRow(theme, "Data Protocol", "REST API", "JSON Grid Serialization"),
+          _buildTechRow(theme, "Frontend Engine", "Flutter (Dart)",
+              "Isometric Rendering Layer"),
+          _buildTechRow(theme, "Backend Logic", "Python (Flask)",
+              "Heuristic Optimization"),
+          _buildTechRow(
+              theme, "Data Protocol", "REST API", "JSON Grid Serialization"),
           const SizedBox(height: 20),
-          Text("ALGORITHMIC LOGIC", style: TextStyle(color: theme.disabledColor, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+          Text("ALGORITHMIC LOGIC",
+              style: TextStyle(
+                  color: theme.disabledColor,
+                  letterSpacing: 1.5,
+                  fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           _buildInfoCard(
             theme,
@@ -365,24 +403,25 @@ class SystemInfoScreen extends StatelessWidget {
           ),
           const SizedBox(height: 40),
           Center(
-            child: Text(
-                "Reshape_S v1.0.0",
-                style: TextStyle(color: theme.disabledColor, fontSize: 12)
-            ),
+            child: Text("Reshape_S v1.0.0",
+                style: TextStyle(color: theme.disabledColor, fontSize: 12)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoCard(ThemeData theme, String title, String content, IconData icon) {
+  Widget _buildInfoCard(
+      ThemeData theme, String title, String content, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: theme.dividerColor),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,17 +430,26 @@ class SystemInfoScreen extends StatelessWidget {
             children: [
               Icon(icon, color: theme.colorScheme.secondary),
               const SizedBox(width: 10),
-              Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: theme.colorScheme.primary)),
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary)),
             ],
           ),
           const SizedBox(height: 10),
-          Text(content, style: TextStyle(fontSize: 14, height: 1.5, color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8))),
+          Text(content,
+              style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8))),
         ],
       ),
     );
   }
 
-  Widget _buildTechRow(ThemeData theme, String label, String value, String sub) {
+  Widget _buildTechRow(
+      ThemeData theme, String label, String value, String sub) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
@@ -416,12 +464,18 @@ class SystemInfoScreen extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(fontSize: 12, color: theme.disabledColor)),
+              Text(label,
+                  style: TextStyle(fontSize: 12, color: theme.disabledColor)),
               const SizedBox(height: 2),
-              Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: theme.textTheme.bodyMedium?.color)),
+              Text(value,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: theme.textTheme.bodyMedium?.color)),
             ],
           ),
-          Text(sub, style: TextStyle(fontSize: 12, color: theme.colorScheme.secondary)),
+          Text(sub,
+              style:
+                  TextStyle(fontSize: 12, color: theme.colorScheme.secondary)),
         ],
       ),
     );
@@ -460,7 +514,8 @@ class _SimulationScreenState extends State<SimulationScreen> {
       const String localUrl = 'http://127.0.0.1:5000';
 
       // SMART SWITCH LOGIC
-      bool useLocal = kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
+      bool useLocal =
+          kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
       final String baseUrl = useLocal ? localUrl : productionUrl;
 
       String url = '$baseUrl/api/v1/generate_random';
@@ -489,7 +544,8 @@ class _SimulationScreenState extends State<SimulationScreen> {
       const String productionUrl = 'https://reshape-s.vercel.app';
       const String localUrl = 'http://127.0.0.1:5000';
 
-      bool useLocal = kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
+      bool useLocal =
+          kDebugMode && defaultTargetPlatform == TargetPlatform.windows;
       final String baseUrl = useLocal ? localUrl : productionUrl;
 
       String url = '$baseUrl/api/v1/calculate_score';
@@ -507,7 +563,9 @@ class _SimulationScreenState extends State<SimulationScreen> {
           budget = data['metrics']['budget'];
         });
       }
-    } catch (e) { print(e); }
+    } catch (e) {
+      print(e);
+    }
   }
 
   void _cycleTile(int x, int y) {
@@ -515,9 +573,12 @@ class _SimulationScreenState extends State<SimulationScreen> {
     if (current == 1 || current == 5 || current == 6) return;
 
     setState(() {
-      if (current == 0) grid[x][y] = 2;
-      else if (current == 2) grid[x][y] = 3;
-      else if (current == 3) grid[x][y] = 4;
+      if (current == 0) {
+        grid[x][y] = 2;
+      } else if (current == 2)
+        grid[x][y] = 3;
+      else if (current == 3)
+        grid[x][y] = 4;
       else if (current == 4) grid[x][y] = 0;
     });
     _updateScore();
@@ -542,25 +603,32 @@ class _SimulationScreenState extends State<SimulationScreen> {
           children: [
             Positioned.fill(
               child: grid.isEmpty
-                  ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+                  ? Center(
+                      child: CircularProgressIndicator(
+                          color: theme.colorScheme.primary))
                   : InteractiveViewer(
-                boundaryMargin: const EdgeInsets.all(500),
-                minScale: 0.1,
-                maxScale: 4.0,
-                child: Center(
-                  child: SizedBox(
-                    width: 1500,
-                    height: 1500,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: _buildSimpleLayer(),
+                      boundaryMargin: const EdgeInsets.all(500),
+                      minScale: 0.1,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: SizedBox(
+                          width: 1500,
+                          height: 1500,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: _buildSimpleLayer(),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
             ),
-            Positioned(top: 40, right: 20, child: _buildFloatingMetricsPanel(theme)),
-            Positioned(bottom: 30, left: 0, right: 0, child: Center(child: _buildControlBar(theme))),
+            Positioned(
+                top: 40, right: 20, child: _buildFloatingMetricsPanel(theme)),
+            Positioned(
+                bottom: 30,
+                left: 0,
+                right: 0,
+                child: Center(child: _buildControlBar(theme))),
             Positioned(
               top: 40,
               left: 20,
@@ -589,8 +657,9 @@ class _SimulationScreenState extends State<SimulationScreen> {
         int type = grid[x][y];
 
         double visualOffset = 0;
-        if (type == 2 || type == 3) visualOffset = 12.0;
-        else if (type == 4) visualOffset = 6.0;
+        if (type == 2 || type == 3) {
+          visualOffset = 12.0;
+        } else if (type == 4) visualOffset = 6.0;
 
         tiles.add(Positioned(
           left: screenX,
@@ -630,7 +699,9 @@ class _SimulationScreenState extends State<SimulationScreen> {
         color: theme.cardColor.withOpacity(0.95),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.dividerColor),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15)
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
@@ -652,11 +723,16 @@ class _SimulationScreenState extends State<SimulationScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("CITY METRICS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: theme.hintColor)),
+            Text("CITY METRICS",
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: theme.hintColor)),
             IconButton(
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              icon: Icon(Icons.close_fullscreen, size: 18, color: theme.disabledColor),
+              icon: Icon(Icons.close_fullscreen,
+                  size: 18, color: theme.disabledColor),
               onPressed: () => setState(() => isMetricsVisible = false),
             ),
           ],
@@ -669,7 +745,11 @@ class _SimulationScreenState extends State<SimulationScreen> {
         const SizedBox(height: 12),
         _buildStatRow("Pollution", "$pollution ppm", Colors.orange),
         const SizedBox(height: 20),
-        Text("AI Status: ACTIVE", style: TextStyle(color: theme.colorScheme.primary, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text("AI Status: ACTIVE",
+            style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontSize: 10,
+                fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -688,7 +768,9 @@ class _SimulationScreenState extends State<SimulationScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 20, fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -700,7 +782,9 @@ class _SimulationScreenState extends State<SimulationScreen> {
         color: theme.cardColor.withOpacity(0.9),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: theme.dividerColor),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -711,7 +795,12 @@ class _SimulationScreenState extends State<SimulationScreen> {
             tooltip: "Regenerate World",
           ),
           const SizedBox(width: 20),
-          Text("GOD MODE", style: TextStyle(color: theme.disabledColor, letterSpacing: 2, fontWeight: FontWeight.bold, fontSize: 12)),
+          Text("GOD MODE",
+              style: TextStyle(
+                  color: theme.disabledColor,
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12)),
         ],
       ),
     );
